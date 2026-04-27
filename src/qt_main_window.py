@@ -84,12 +84,6 @@ class MainWindow(QWidget):
         # Tab 控件
         self.tabs = QTabWidget()
 
-        self.speech_tab = ui_tabs.SpeechTabWidget(
-            client_getter=self._get_client,
-            check_client_func=self._check_client,
-        )
-        self.tabs.addTab(self.speech_tab, "🎤 语音生成")
-
         self.chat_tab = ui_tabs.ChatTabWidget(
             client_getter=self._get_client,
             check_client_func=self._check_client,
@@ -103,17 +97,23 @@ class MainWindow(QWidget):
         )
         self.tabs.addTab(self.image_tab, "🖼️ 图像生成")
 
-        self.video_tab = ui_tabs.VideoTabWidget(
-            client_getter=self._get_client,
-            check_client_func=self._check_client,
-        )
-        self.tabs.addTab(self.video_tab, "🎬 视频生成")
-
         self.music_tab = ui_tabs.MusicTabWidget(
             client_getter=self._get_client,
             check_client_func=self._check_client,
         )
         self.tabs.addTab(self.music_tab, "🎵 音乐生成")
+
+        self.speech_tab = ui_tabs.SpeechTabWidget(
+            client_getter=self._get_client,
+            check_client_func=self._check_client,
+        )
+        self.tabs.addTab(self.speech_tab, "🎤 语音生成")
+
+        self.video_tab = ui_tabs.VideoTabWidget(
+            client_getter=self._get_client,
+            check_client_func=self._check_client,
+        )
+        self.tabs.addTab(self.video_tab, "🎬 视频生成")
 
         self.config_tab = ui_tabs.ConfigTabWidget(
             config_manager=self.config_manager,
@@ -128,31 +128,38 @@ class MainWindow(QWidget):
     # ==================== 配置回调 ====================
 
     def _on_api_key_saved(self):
-        """API 密钥保存后的回调"""
+        """API 密钥配置变更后的回调（保存/删除都会触发）"""
         self._init_client()
-        if self.client:
-            from PySide6.QtWidgets import QMessageBox
-            validation = self.client.validate_api_key()
-            if validation.get("ok"):
-                api_key = self.config_manager.get_api_key()
-                QMessageBox.information(
-                    self, "成功",
-                    f"API 密钥已保存并校验通过\n{validation.get('message', '')}"
-                )
-                self.api_key_warning.setText(
-                    f"✓ API 密钥已配置: {self.config_manager._mask_api_key(api_key)}"
-                )
-                self.api_key_warning.setStyleSheet("color: #4caf50;")
-            else:
-                QMessageBox.warning(
-                    self, "校验失败",
-                    f"API 密钥已保存，但校验未通过\n{validation.get('message', '未知错误')}"
-                )
-                self.api_key_warning.setText("⚠️ API 密钥已保存，但校验未通过，请检查后重试")
-                self.api_key_warning.setStyleSheet("color: #ff9800;")
+        if not self.client:
+            self.api_key_warning.setText("⚠️ 请先在「配置」页面设置 API 密钥")
+            self.api_key_warning.setStyleSheet("color: #ff9800;")
+            if hasattr(self, "config_tab"):
+                self.config_tab.update_api_key_warning("未配置 API 密钥。", "#ff9800")
+            return
+
+        from PySide6.QtWidgets import QMessageBox
+        validation = self.client.validate_api_key()
+        if validation.get("ok"):
+            api_key = self.config_manager.get_api_key()
+            QMessageBox.information(
+                self, "成功",
+                f"API 密钥已保存并校验通过\n{validation.get('message', '')}"
+            )
+            self.api_key_warning.setText(
+                f"✓ API 密钥已配置: {self.config_manager._mask_api_key(api_key)}"
+            )
+            self.api_key_warning.setStyleSheet("color: #4caf50;")
+            if hasattr(self, "config_tab"):
+                self.config_tab.update_api_key_warning("API 密钥校验通过，可正常使用。", "#4caf50")
         else:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "失败", "客户端初始化失败")
+            QMessageBox.warning(
+                self, "校验失败",
+                f"API 密钥已保存，但校验未通过\n{validation.get('message', '未知错误')}"
+            )
+            self.api_key_warning.setText("⚠️ API 密钥已保存，但校验未通过，请检查后重试")
+            self.api_key_warning.setStyleSheet("color: #ff9800;")
+            if hasattr(self, "config_tab"):
+                self.config_tab.update_api_key_warning("鉴权失败，请检查网络或 API 密钥。", "#ff9800")
 
     def _on_output_dir_changed(self):
         """输出目录变更后的回调"""

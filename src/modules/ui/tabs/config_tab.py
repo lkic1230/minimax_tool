@@ -6,7 +6,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import (
     QScrollArea, QWidget, QVBoxLayout, QGroupBox, QLineEdit, QPushButton, QLabel,
-    QHBoxLayout, QMessageBox, QFileDialog, QCheckBox
+    QHBoxLayout, QMessageBox, QFileDialog, QCheckBox, QApplication
 )
 from PySide6.QtCore import Qt
 
@@ -71,18 +71,22 @@ class ConfigTabWidget(QScrollArea):
         key_layout.addWidget(self.api_key_input)
 
         key_btn_layout = QHBoxLayout()
-        save_key_btn = self._make_button("💾 保存密钥", self._save_api_key)
-        key_btn_layout.addWidget(save_key_btn)
+        self.save_key_btn = self._make_button("💾 保存密钥", self._save_api_key)
+        key_btn_layout.addWidget(self.save_key_btn)
 
-        delete_key_btn = self._make_button(
+        self.delete_key_btn = self._make_button(
             "🗑️ 删除密钥",
             self._delete_api_key,
             style="color: #ff5555;",
         )
-        key_btn_layout.addWidget(delete_key_btn)
+        key_btn_layout.addWidget(self.delete_key_btn)
 
         key_btn_layout.addStretch()
         key_layout.addLayout(key_btn_layout)
+
+        self.api_key_hint_label = QLabel("")
+        self.api_key_hint_label.setStyleSheet("color: #888; font-size: 12px;")
+        key_layout.addWidget(self.api_key_hint_label)
 
         self.api_key_status_label = QLabel("")
         self._refresh_api_key_status()
@@ -179,7 +183,11 @@ class ConfigTabWidget(QScrollArea):
             return
 
         if self.config_manager.set_api_key(api_key):
+            self._set_api_key_hint("正在校验 API 密钥，请稍候...", "#888")
+            self._set_api_key_buttons_enabled(False)
+            QApplication.processEvents()
             self.on_api_key_saved()
+            self._set_api_key_buttons_enabled(True)
             self.api_key_input.clear()
             self._refresh_api_key_status()
         else:
@@ -200,11 +208,20 @@ class ConfigTabWidget(QScrollArea):
             return
 
         if self.config_manager.delete_api_key():
+            self._set_api_key_hint("API 密钥已删除。", "#ff9800")
             self._refresh_api_key_status()
             self.on_api_key_saved()  # 通知主窗口重置客户端
             QMessageBox.information(self, "成功", "API 密钥已删除")
         else:
             QMessageBox.warning(self, "失败", "删除失败")
+
+    def _set_api_key_hint(self, text: str, color: str = "#888"):
+        self.api_key_hint_label.setText(text)
+        self.api_key_hint_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+
+    def _set_api_key_buttons_enabled(self, enabled: bool):
+        self.save_key_btn.setEnabled(enabled)
+        self.delete_key_btn.setEnabled(enabled)
 
     # ==================== 输出目录操作 ====================
 
@@ -298,4 +315,4 @@ class ConfigTabWidget(QScrollArea):
 
     def update_api_key_warning(self, text: str, color: str):
         """由主窗口调用，更新 API 密钥状态提示"""
-        pass
+        self._set_api_key_hint(text, color)

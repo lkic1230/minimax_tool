@@ -33,10 +33,15 @@ class ConfigManager:
         self.key_file = self.config_dir / ".key"
         self.device_file = self.config_dir / ".device"
         self._device_mismatch = False
-        self._fernet = self._get_or_create_fernet()
+        self._fernet: Optional[Fernet] = self._get_or_create_fernet()
         if self._device_mismatch:
             self._reset_after_device_mismatch()
         ensure_dirs()
+
+    def _ensure_fernet(self) -> Fernet:
+        if self._fernet is None:
+            self._fernet = self._get_or_create_fernet()
+        return self._fernet
 
     def _derive_key(self, password: bytes, salt: bytes) -> bytes:
         kdf = PBKDF2HMAC(
@@ -127,7 +132,7 @@ class ConfigManager:
         try:
             with open(self.config_file, "rb") as f:
                 encrypted_data = f.read()
-            decrypted_data = self._fernet.decrypt(encrypted_data)
+            decrypted_data = self._ensure_fernet().decrypt(encrypted_data)
             return json.loads(decrypted_data.decode())
         except Exception:
             return {}
@@ -136,7 +141,7 @@ class ConfigManager:
         if self._device_mismatch:
             return False
         try:
-            encrypted_data = self._fernet.encrypt(json.dumps(config_data).encode())
+            encrypted_data = self._ensure_fernet().encrypt(json.dumps(config_data).encode())
             with open(self.config_file, "wb") as f:
                 f.write(encrypted_data)
             return True
@@ -159,6 +164,15 @@ class ConfigManager:
         config_data = self._load_config()
         if "api_key" in config_data:
             del config_data["api_key"]
+        # 若仅剩空配置，直接删除配置文件，避免残留无意义缓存
+        if not config_data:
+            try:
+                if self.config_file.exists():
+                    self.config_file.unlink()
+                return True
+            except Exception as e:
+                print(f"删除配置文件失败: {e}")
+                return False
         return self._save_config(config_data)
 
     def set_output_dir(self, output_dir: str) -> bool:
@@ -282,7 +296,7 @@ class ConfigManager:
 
         # 重新创建 Fernet（会生成新密钥）
         self._device_mismatch = False
-        self._fernet = self._get_or_create_fernet()
+        self._fernet = None
 
         return result
 
