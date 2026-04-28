@@ -3,6 +3,18 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+from ...core.constants import (
+    SPEECH_MODELS,
+    SPEECH_MODEL_DEFAULT,
+    SPEECH_VOICES,
+    SPEECH_VOICE_DEFAULT,
+    SPEECH_API_EMOTIONS,
+    SPEECH_EMOTION_DEFAULT,
+    SPEECH_SPEED_MIN,
+    SPEECH_SPEED_MAX,
+    SPEECH_SPEED_DEFAULT,
+)
+
 
 class SpeechDomainMixin:
     """语音生成相关方法。"""
@@ -10,15 +22,24 @@ class SpeechDomainMixin:
     def generate_speech(
         self,
         text: str,
-        model: str = "speech-2.8-hd",
-        voice_id: str = "female-tianmei",
-        speed: float = 1.0,
+        model: str = SPEECH_MODEL_DEFAULT,
+        voice_id: str = SPEECH_VOICE_DEFAULT,
+        speed: float = SPEECH_SPEED_DEFAULT,
         volume: float = 1.0,
         pitch: float = 1.0,
-        emotion: str = "neutral",
+        emotion: str = SPEECH_EMOTION_DEFAULT,
         output_format: str = "url",
         save_path: str = None,
     ) -> Dict[str, Any]:
+        if model not in SPEECH_MODELS:
+            raise ValueError(f"不支持的语音模型: {model}，可选: {', '.join(SPEECH_MODELS)}")
+        if voice_id not in SPEECH_VOICES:
+            raise ValueError(f"不支持的音色: {voice_id}，可选: {', '.join(SPEECH_VOICES)}")
+        if not (SPEECH_SPEED_MIN <= speed <= SPEECH_SPEED_MAX):
+            raise ValueError(f"语速超出范围: {speed}，应在 {SPEECH_SPEED_MIN}-{SPEECH_SPEED_MAX}")
+        if emotion not in SPEECH_API_EMOTIONS:
+            raise ValueError(f"不支持的情感: {emotion}，可选: {', '.join(SPEECH_API_EMOTIONS)}")
+
         data = {
             "model": model,
             "text": text,
@@ -70,4 +91,3 @@ class SpeechDomainMixin:
             {"id": "male-john", "name": "约翰", "gender": "male"},
             {"id": "male-tianmei", "name": "甜帅哥", "gender": "male"},
         ]
-

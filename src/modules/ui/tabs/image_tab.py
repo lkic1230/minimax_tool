@@ -2,10 +2,10 @@
 图像生成 Tab 组件（self-contained Widget）。
 """
 import os
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
-from PySide6.QtCore import Qt, QEvent
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QEvent, QTimer, QPoint, QRectF, Signal
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QComboBox,
     QSpinBox, QCheckBox, QLineEdit, QLabel, QPushButton, QTextEdit, QTabWidget,
@@ -13,6 +13,88 @@ from PySide6.QtWidgets import (
 )
 
 from ..components.common import GenerationThread
+from ...core.constants import IMAGE_MODELS, IMAGE_ASPECT_RATIOS, IMAGE_STYLES
+
+
+class MiniMapWidget(QWidget):
+    """图像预览小地图：显示整图和当前可视区域，并支持点击跳转。"""
+
+    navigateRequested = Signal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(180, 120)
+        self._pixmap: Optional[QPixmap] = None
+        self._image_rect = QRectF()
+        self._view_rect = QRectF()
+
+    def update_state(
+        self,
+        pixmap: Optional[QPixmap],
+        content_width: int,
+        content_height: int,
+        viewport_width: int,
+        viewport_height: int,
+        scroll_x: int,
+        scroll_y: int,
+    ):
+        self._pixmap = pixmap
+        if not pixmap or pixmap.isNull() or content_width <= 0 or content_height <= 0:
+            self._image_rect = QRectF()
+            self._view_rect = QRectF()
+            self.hide()
+            self.update()
+            return
+
+        margin = 6.0
+        avail_w = max(1.0, self.width() - margin * 2)
+        avail_h = max(1.0, self.height() - margin * 2)
+        scale = min(avail_w / content_width, avail_h / content_height)
+        draw_w = max(1.0, content_width * scale)
+        draw_h = max(1.0, content_height * scale)
+        draw_x = (self.width() - draw_w) / 2.0
+        draw_y = (self.height() - draw_h) / 2.0
+        self._image_rect = QRectF(draw_x, draw_y, draw_w, draw_h)
+
+        view_w = min(content_width, max(1, viewport_width))
+        view_h = min(content_height, max(1, viewport_height))
+        view_x = min(max(0, scroll_x), max(0, content_width - view_w))
+        view_y = min(max(0, scroll_y), max(0, content_height - view_h))
+        self._view_rect = QRectF(
+            draw_x + (view_x / content_width) * draw_w,
+            draw_y + (view_y / content_height) * draw_h,
+            max(1.0, (view_w / content_width) * draw_w),
+            max(1.0, (view_h / content_height) * draw_h),
+        )
+        self.show()
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.fillRect(self.rect(), QColor(32, 32, 32, 200))
+
+        if not self._pixmap or self._pixmap.isNull() or self._image_rect.isEmpty():
+            painter.setPen(QColor(120, 120, 120))
+            painter.drawText(self.rect(), Qt.AlignCenter, "小地图")
+            return
+
+        painter.drawPixmap(self._image_rect, self._pixmap, QRectF(self._pixmap.rect()))
+        painter.setPen(QPen(QColor(220, 220, 220), 1))
+        painter.drawRect(self._image_rect)
+        painter.setPen(QPen(QColor(76, 175, 80), 2))
+        painter.drawRect(self._view_rect)
+
+    def mousePressEvent(self, event):
+        if self._image_rect.isEmpty():
+            return
+        x = event.position().x()
+        y = event.position().y()
+        if not self._image_rect.contains(x, y):
+            return
+        nx = (x - self._image_rect.left()) / self._image_rect.width()
+        ny = (y - self._image_rect.top()) / self._image_rect.height()
+        self.navigateRequested.emit(float(nx), float(ny))
 
 
 class ImageTabWidget(QWidget):
@@ -28,8 +110,15 @@ class ImageTabWidget(QWidget):
         self.client_getter = client_getter
         self.check_client_func = check_client_func
         self.generation_thread = None
-        self._drag_start = None
-        self._drag_pos = None
+        self._drag_start: Optional[QPoint] = None
+        self._original_preview_pixmap: Optional[QPixmap] = None
+        self._pending_scale_value = 100
+        self._last_applied_scale_value = 100
+        self._zoom_anchor_original: Optional[tuple[float, float]] = None
+        self._zoom_anchor_viewport: Optional[QPoint] = None
+        self._scale_timer = QTimer(self)
+        self._scale_timer.setSingleShot(True)
+        self._scale_timer.timeout.connect(self._apply_pending_scale)
         self._build_ui()
 
     def _build_ui(self):
@@ -79,7 +168,7 @@ class ImageTabWidget(QWidget):
         params_layout = QFormLayout()
 
         self.image_model = QComboBox()
-        self.image_model.addItems(["image-01", "image-01-live"])
+        self.image_model.addItems(IMAGE_MODELS)
         params_layout.addRow("模型:", self.image_model)
 
         self.image_count = QSpinBox()
@@ -88,11 +177,11 @@ class ImageTabWidget(QWidget):
         params_layout.addRow("数量:", self.image_count)
 
         self.image_ratio = QComboBox()
-        self.image_ratio.addItems(["1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9"])
+        self.image_ratio.addItems(IMAGE_ASPECT_RATIOS)
         params_layout.addRow("宽高比:", self.image_ratio)
 
         self.image_style = QComboBox()
-        self.image_style.addItems(["无", "漫画", "元气", "中世纪", "水彩"])
+        self.image_style.addItems(IMAGE_STYLES)
         params_layout.addRow("画风:", self.image_style)
 
         self.image_watermark = QCheckBox("添加水印")
@@ -139,7 +228,11 @@ class ImageTabWidget(QWidget):
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.addLayout(self._create_scale_layout())
-        right_layout.addWidget(self._create_preview_container())
+        right_layout.addWidget(self._create_preview_container(), 1)
+        mini_row = QHBoxLayout()
+        mini_row.addStretch()
+        mini_row.addWidget(self._create_minimap_widget())
+        right_layout.addLayout(mini_row)
         right_layout.addWidget(self._create_info_label())
         return right_widget
 
@@ -165,7 +258,7 @@ class ImageTabWidget(QWidget):
 
     def _create_preview_container(self) -> QScrollArea:
         self.image_preview_container = QScrollArea()
-        self.image_preview_container.setWidgetResizable(True)
+        self.image_preview_container.setWidgetResizable(False)
         self.image_preview_container.setAlignment(Qt.AlignCenter)
         self.image_preview_container.setMinimumSize(400, 300)
         self.image_preview_container.setStyleSheet("border: 1px solid #555; background: #2a2a2a;")
@@ -175,10 +268,21 @@ class ImageTabWidget(QWidget):
         self.image_preview_label.setText("生成的图片将显示在这里\n\n支持鼠标滚轮缩放，拖拽移动图片")
         self.image_preview_label.setStyleSheet("color: #666; font-size: 14px;")
         self.image_preview_label.setMinimumSize(400, 300)
+        self.image_preview_label.setCursor(Qt.OpenHandCursor)
         self.image_preview_label.installEventFilter(self)
+        self.image_preview_container.viewport().installEventFilter(self)
+        self.image_preview_container.horizontalScrollBar().valueChanged.connect(self._update_minimap)
+        self.image_preview_container.verticalScrollBar().valueChanged.connect(self._update_minimap)
 
         self.image_preview_container.setWidget(self.image_preview_label)
         return self.image_preview_container
+
+    def _create_minimap_widget(self) -> QWidget:
+        self.image_minimap = MiniMapWidget(self)
+        self.image_minimap.setToolTip("小地图：点击可跳转到对应区域")
+        self.image_minimap.navigateRequested.connect(self._on_minimap_navigate)
+        self.image_minimap.hide()
+        return self.image_minimap
 
     def _create_info_label(self) -> QLabel:
         self.image_info = QLabel("")
@@ -237,29 +341,55 @@ class ImageTabWidget(QWidget):
 
     def eventFilter(self, obj, event):
         """图片拖拽/滚轮事件过滤器"""
+        if obj == self.image_preview_container.viewport() and event.type() == QEvent.Resize:
+            self._update_minimap()
+            return False
         if obj == self.image_preview_label:
             if event.type() == QEvent.MouseButtonPress:
-                self._drag_start = event.pos()
-                self._drag_pos = self.image_preview_label.pos()
+                if event.button() == Qt.LeftButton:
+                    self._drag_start = event.position().toPoint()
+                    self.image_preview_label.setCursor(Qt.ClosedHandCursor)
                 return True
             if event.type() == QEvent.MouseMove:
-                if self._drag_start is not None:
-                    delta = event.pos() - self._drag_start
-                    new_pos = self._drag_pos + delta
-                    container = self.image_preview_container
-                    label = self.image_preview_label
-                    max_x = (container.width() - label.width()) // 2 + 50
-                    max_y = (container.height() - label.height()) // 2 + 50
-                    new_pos.setX(max(-max_x, min(max_x, new_pos.x())))
-                    new_pos.setY(max(-max_y, min(max_y, new_pos.y())))
-                    label.move(new_pos)
+                if self._drag_start is not None and (event.buttons() & Qt.LeftButton):
+                    delta = event.position().toPoint() - self._drag_start
+                    hbar = self.image_preview_container.horizontalScrollBar()
+                    vbar = self.image_preview_container.verticalScrollBar()
+                    hbar.setValue(hbar.value() - delta.x())
+                    vbar.setValue(vbar.value() - delta.y())
+                    self._drag_start = event.position().toPoint()
+                return True
+            if event.type() == QEvent.MouseButtonRelease:
+                if event.button() == Qt.LeftButton:
+                    self._drag_start = None
+                    self.image_preview_label.setCursor(Qt.OpenHandCursor)
                 return True
             if event.type() == QEvent.Wheel:
                 delta = event.angleDelta().y()
+                if self._original_preview_pixmap and not self._original_preview_pixmap.isNull():
+                    viewport = self.image_preview_container.viewport()
+                    cursor_vp = viewport.mapFromGlobal(event.globalPosition().toPoint())
+                    hbar = self.image_preview_container.horizontalScrollBar()
+                    vbar = self.image_preview_container.verticalScrollBar()
+                    old_factor = max(0.1, self._last_applied_scale_value / 100.0)
+                    self._zoom_anchor_original = (
+                        (hbar.value() + cursor_vp.x()) / old_factor,
+                        (vbar.value() + cursor_vp.y()) / old_factor,
+                    )
+                    self._zoom_anchor_viewport = cursor_vp
+
+                step = 20
+                if event.modifiers() & Qt.ControlModifier:
+                    step = 10
+                if event.modifiers() & Qt.ShiftModifier:
+                    step = 40
                 if delta > 0:
-                    self.image_scale_slider.setValue(self.image_scale_slider.value() + 20)
+                    self.image_scale_slider.setValue(self.image_scale_slider.value() + step)
                 else:
-                    self.image_scale_slider.setValue(self.image_scale_slider.value() - 20)
+                    self.image_scale_slider.setValue(self.image_scale_slider.value() - step)
+                return True
+            if event.type() == QEvent.MouseButtonDblClick:
+                self._fit_image()
                 return True
         return super().eventFilter(obj, event)
 
@@ -279,15 +409,112 @@ class ImageTabWidget(QWidget):
 
     def _on_scale_changed(self, value):
         self.image_scale_label.setText(f"{value}%")
-        pixmap = self.image_preview_label.pixmap()
-        if pixmap:
-            scaled = pixmap.scaled(
-                pixmap.size() * value / 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            self.image_preview_label.setPixmap(scaled)
+        if self._original_preview_pixmap and not self._original_preview_pixmap.isNull():
+            if self._zoom_anchor_original is None:
+                viewport = self.image_preview_container.viewport()
+                center_x = viewport.width() // 2
+                center_y = viewport.height() // 2
+                hbar = self.image_preview_container.horizontalScrollBar()
+                vbar = self.image_preview_container.verticalScrollBar()
+                old_factor = max(0.1, self._last_applied_scale_value / 100.0)
+                self._zoom_anchor_original = (
+                    (hbar.value() + center_x) / old_factor,
+                    (vbar.value() + center_y) / old_factor,
+                )
+                self._zoom_anchor_viewport = QPoint(center_x, center_y)
+        self._pending_scale_value = value
+        # 合并短时间内的高频缩放事件，降低卡顿
+        self._scale_timer.start(16)
+
+    def _apply_pending_scale(self):
+        if not self._original_preview_pixmap or self._original_preview_pixmap.isNull():
+            return
+        self._render_preview_at_scale(self._pending_scale_value)
+
+    def _render_preview_at_scale(self, scale_value: int):
+        if not self._original_preview_pixmap or self._original_preview_pixmap.isNull():
+            return
+        factor = max(0.1, scale_value / 100.0)
+        source_size = self._original_preview_pixmap.size()
+        target_size = source_size * factor
+        scaled = self._original_preview_pixmap.scaled(
+            target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.image_preview_label.setPixmap(scaled)
+        self.image_preview_label.adjustSize()
+        hbar = self.image_preview_container.horizontalScrollBar()
+        vbar = self.image_preview_container.verticalScrollBar()
+        if self._zoom_anchor_original and self._zoom_anchor_viewport:
+            orig_x, orig_y = self._zoom_anchor_original
+            vp = self._zoom_anchor_viewport
+            hbar.setValue(int(orig_x * factor - vp.x()))
+            vbar.setValue(int(orig_y * factor - vp.y()))
+        self._last_applied_scale_value = scale_value
+        self._zoom_anchor_original = None
+        self._zoom_anchor_viewport = None
+        self._update_minimap()
+
+    def _on_minimap_navigate(self, nx: float, ny: float):
+        if not self.image_preview_label.pixmap():
+            return
+        pix = self.image_preview_label.pixmap()
+        if not pix:
+            return
+        content_w = max(1, pix.width())
+        content_h = max(1, pix.height())
+        viewport = self.image_preview_container.viewport().size()
+        hbar = self.image_preview_container.horizontalScrollBar()
+        vbar = self.image_preview_container.verticalScrollBar()
+        target_x = int(nx * content_w - viewport.width() / 2)
+        target_y = int(ny * content_h - viewport.height() / 2)
+        hbar.setValue(max(hbar.minimum(), min(hbar.maximum(), target_x)))
+        vbar.setValue(max(vbar.minimum(), min(vbar.maximum(), target_y)))
+        self._update_minimap()
+
+    def _update_minimap(self):
+        if not hasattr(self, "image_minimap"):
+            return
+        if not self._original_preview_pixmap or self._original_preview_pixmap.isNull():
+            self.image_minimap.update_state(None, 0, 0, 0, 0, 0, 0)
+            return
+        displayed = self.image_preview_label.pixmap()
+        if not displayed:
+            self.image_minimap.update_state(None, 0, 0, 0, 0, 0, 0)
+            return
+        viewport = self.image_preview_container.viewport().size()
+        hbar = self.image_preview_container.horizontalScrollBar()
+        vbar = self.image_preview_container.verticalScrollBar()
+        self.image_minimap.update_state(
+            pixmap=self._original_preview_pixmap,
+            content_width=max(1, displayed.width()),
+            content_height=max(1, displayed.height()),
+            viewport_width=viewport.width(),
+            viewport_height=viewport.height(),
+            scroll_x=hbar.value(),
+            scroll_y=vbar.value(),
+        )
 
     def _fit_image(self):
-        self.image_scale_slider.setValue(100)
+        if not self._original_preview_pixmap or self._original_preview_pixmap.isNull():
+            self.image_scale_slider.setValue(100)
+            return
+        viewport_size = self.image_preview_container.viewport().size()
+        src_size = self._original_preview_pixmap.size()
+        if src_size.width() <= 0 or src_size.height() <= 0:
+            self.image_scale_slider.setValue(100)
+            return
+        fit_ratio = min(
+            viewport_size.width() / src_size.width(),
+            viewport_size.height() / src_size.height(),
+        )
+        fit_percent = int(round(fit_ratio * 100))
+        fit_percent = max(self.image_scale_slider.minimum(), min(self.image_scale_slider.maximum(), fit_percent))
+        prev_value = self.image_scale_slider.value()
+        self.image_scale_slider.setValue(fit_percent)
+        # 若数值未变化，valueChanged 不会触发，需手动刷新新图渲染
+        if prev_value == fit_percent:
+            self._pending_scale_value = fit_percent
+            self._apply_pending_scale()
 
     def _select_image_ref(self):
         filepath, _ = QFileDialog.getOpenFileName(
@@ -316,13 +543,11 @@ class ImageTabWidget(QWidget):
         if os.path.exists(filepath):
             pixmap = QPixmap(filepath)
             if not pixmap.isNull():
-                scale = self.image_scale_slider.value()
-                scaled = pixmap.scaled(
-                    pixmap.size() * scale / 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                self.image_preview_label.setPixmap(scaled)
-                self.image_preview_label.adjustSize()
-                self.image_preview_label.move(0, 0)
+                self._original_preview_pixmap = pixmap
+                self._zoom_anchor_original = None
+                self._zoom_anchor_viewport = None
+                # 新图默认执行一次自适应，避免只显示局部
+                self._fit_image()
                 self.image_info.setText(f"文件名: {os.path.basename(filepath)}")
                 self.image_path.setText(filepath)
                 self.image_open_path_btn.setEnabled(True)

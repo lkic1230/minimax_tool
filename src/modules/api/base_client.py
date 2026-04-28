@@ -4,6 +4,13 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import requests
+from ..core.constants import (
+    CHAT_MODEL_DEFAULT,
+    SPEECH_MODELS,
+    IMAGE_MODELS,
+    VIDEO_MODELS,
+    MUSIC_MODELS,
+)
 
 
 class BaseMiniMaxClient:
@@ -53,41 +60,16 @@ class BaseMiniMaxClient:
     def get_available_models(self) -> Dict[str, List[str]]:
         """获取所有可用模型。"""
         return {
-            "语音模型": [
-                "speech-2.8-hd - 新一代HD语音，情绪渲染自然听感",
-                "speech-2.8-turbo - 新一代Turbo语音，极致生成速度",
-                "speech-2.6-hd - 极致音质与韵律表现",
-                "speech-2.6-turbo - 超低时延，响应灵敏",
-                "speech-02-hd - 出色韵律和稳定性",
-                "speech-02-turbo - 小语种能力增强",
-            ],
-            "图像模型": [
-                "image-01 - 细腻画面表现，支持文生图/图生图",
-                "image-01-live - 手绘、卡通等画风增强",
-            ],
-            "视频模型-文生视频": [
-                "MiniMax-Hailuo-2.3 - 全新模型，肢体动作/表情突破",
-                "MiniMax-Hailuo-02 - 1080p原生，SOTA指令遵循",
-                "T2V-01-Director - 导演级视频生成",
-                "T2V-01 - 标准视频生成",
-            ],
-            "视频模型-图生视频": [
-                "MiniMax-Hailuo-2.3-Fast - 更快更优惠",
-                "MiniMax-Hailuo-2.3 - 高质量图生视频",
-                "MiniMax-Hailuo-02 - 顶级图生视频",
-                "I2V-01-live - 实时图生视频",
-                "I2V-01-Director - 导演级图生视频",
-            ],
-            "音乐模型": [
-                "music-2.6 - 以声传情，翻唱入心，器乐入魂",
-                "music-cover - 基于参考音频生成翻唱版本",
-            ],
+            "语音模型": SPEECH_MODELS,
+            "图像模型": IMAGE_MODELS,
+            "视频模型": VIDEO_MODELS,
+            "音乐模型": MUSIC_MODELS,
         }
 
     def validate_api_key(self) -> Dict[str, Any]:
         """校验 API Key 可用性（文本对话端点）。"""
         probe_payload = {
-            "model": "MiniMax-M2.7",
+            "model": CHAT_MODEL_DEFAULT,
             "messages": [{"role": "user", "content": "ping"}],
             "max_completion_tokens": 8,
             "stream": False,
@@ -128,4 +110,3 @@ class BaseMiniMaxClient:
             return {"ok": False, "message": f"校验失败（HTTP {response.status_code}）"}
         except requests.RequestException as e:
             return {"ok": False, "message": f"网络错误: {e}"}
-

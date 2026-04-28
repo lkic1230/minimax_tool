@@ -10,6 +10,38 @@ from pathlib import Path
 from tabulate import tabulate
 
 from .modules.core import get_config_manager
+from .modules.core.constants import (
+    CHAT_MODELS,
+    CHAT_MODEL_DEFAULT,
+    CHAT_MAX_TOKENS_DEFAULT,
+    CHAT_MAX_TOKENS_MIN,
+    CHAT_MAX_TOKENS_MAX,
+    CHAT_TEMPERATURE_DEFAULT,
+    CHAT_TOP_P_DEFAULT,
+    SPEECH_MODELS,
+    SPEECH_MODEL_DEFAULT,
+    SPEECH_VOICES,
+    SPEECH_VOICE_DEFAULT,
+    SPEECH_API_EMOTIONS,
+    SPEECH_EMOTION_DEFAULT,
+    SPEECH_SPEED_MIN,
+    SPEECH_SPEED_MAX,
+    SPEECH_SPEED_DEFAULT,
+    IMAGE_MODELS,
+    IMAGE_MODEL_DEFAULT,
+    IMAGE_COUNT_DEFAULT,
+    IMAGE_ASPECT_RATIOS,
+    IMAGE_ASPECT_RATIO_DEFAULT,
+    IMAGE_STYLE_MODEL,
+    VIDEO_MODELS,
+    VIDEO_MODEL_DEFAULT,
+    VIDEO_DURATIONS,
+    VIDEO_DURATION_DEFAULT,
+    VIDEO_RESOLUTIONS,
+    VIDEO_RESOLUTION_DEFAULT,
+    MUSIC_MODELS,
+    MUSIC_MODEL_DEFAULT,
+)
 from .modules.api import MiniMaxClient
 
 
@@ -149,10 +181,16 @@ def speech():
 
 @speech.command('generate')
 @click.option('--text', '-t', required=True, help='要转换的文本')
-@click.option('--model', '-m', default='speech-2.8-hd', help='语音模型')
-@click.option('--voice', '-v', default='female-tianmei', help='音色ID')
-@click.option('--speed', '-s', default=1.0, help='语速 (0.5-2.0)')
-@click.option('--emotion', '-e', default='neutral', help='情感 (neutral/happy/sad/angry)')
+@click.option('--model', '-m', type=click.Choice(SPEECH_MODELS), default=SPEECH_MODEL_DEFAULT, help='语音模型')
+@click.option('--voice', '-v', type=click.Choice(SPEECH_VOICES), default=SPEECH_VOICE_DEFAULT, help='音色ID')
+@click.option(
+    '--speed',
+    '-s',
+    type=click.FloatRange(SPEECH_SPEED_MIN, SPEECH_SPEED_MAX),
+    default=SPEECH_SPEED_DEFAULT,
+    help=f'语速 ({SPEECH_SPEED_MIN}-{SPEECH_SPEED_MAX})',
+)
+@click.option('--emotion', '-e', type=click.Choice(SPEECH_API_EMOTIONS), default=SPEECH_EMOTION_DEFAULT, help='情感')
 @click.option('--output', '-o', help='输出文件路径')
 def speech_generate(text, model, voice, speed, emotion, output):
     """生成语音"""
@@ -196,12 +234,12 @@ def image():
 
 @image.command('generate')
 @click.option('--prompt', '-p', required=True, help='图像描述')
-@click.option('--model', '-m', default='image-01', help='图像模型')
-@click.option('--count', '-n', default=1, help='生成数量 (1-9)')
-@click.option('--ratio', '-r', default='1:1', help='宽高比 (1:1/16:9/4:3等)')
+@click.option('--model', '-m', type=click.Choice(IMAGE_MODELS), default=IMAGE_MODEL_DEFAULT, help='图像模型')
+@click.option('--count', '-n', default=IMAGE_COUNT_DEFAULT, help='生成数量 (1-9)')
+@click.option('--ratio', '-r', type=click.Choice(IMAGE_ASPECT_RATIOS), default=IMAGE_ASPECT_RATIO_DEFAULT, help='宽高比')
 @click.option('--width', '-w', default=1024, help='宽度')
 @click.option('--height', '-h', default=1024, help='高度')
-@click.option('--style', '-s', help='画风 (仅image-01-live)')
+@click.option('--style', '-s', help=f'画风 (仅{IMAGE_STYLE_MODEL})')
 @click.option('--output', '-o', help='输出文件路径')
 def image_generate(prompt, model, count, ratio, width, height, style, output):
     """生成图像"""
@@ -243,9 +281,9 @@ def video():
 
 @video.command('generate')
 @click.option('--prompt', '-p', required=True, help='视频描述')
-@click.option('--model', '-m', default='MiniMax-Hailuo-2.3', help='视频模型')
-@click.option('--duration', '-d', default=6, type=int, help='时长 (6/10秒)')
-@click.option('--resolution', '-r', default='768P', help='分辨率 (512P/720P/768P/1080P)')
+@click.option('--model', '-m', type=click.Choice(VIDEO_MODELS), default=VIDEO_MODEL_DEFAULT, help='视频模型')
+@click.option('--duration', '-d', type=click.Choice(VIDEO_DURATIONS), default=str(VIDEO_DURATION_DEFAULT), help='时长（秒）')
+@click.option('--resolution', '-r', type=click.Choice(VIDEO_RESOLUTIONS), default=VIDEO_RESOLUTION_DEFAULT, help='分辨率')
 @click.option('--output', '-o', help='输出文件路径')
 def video_generate(prompt, model, duration, resolution, output):
     """文生视频"""
@@ -257,7 +295,7 @@ def video_generate(prompt, model, duration, resolution, output):
         result = client.generate_video(
             prompt=prompt,
             model=model,
-            duration=duration,
+            duration=int(duration),
             resolution=resolution,
             save_path=output
         )
@@ -278,9 +316,9 @@ def video_generate(prompt, model, duration, resolution, output):
 @video.command('generate-from-image')
 @click.option('--image', '-i', required=True, help='起始帧图片路径或URL')
 @click.option('--prompt', '-p', default='', help='视频描述')
-@click.option('--model', '-m', default='MiniMax-Hailuo-2.3', help='视频模型')
-@click.option('--duration', '-d', default=6, type=int, help='时长')
-@click.option('--resolution', '-r', default='768P', help='分辨率')
+@click.option('--model', '-m', type=click.Choice(VIDEO_MODELS), default=VIDEO_MODEL_DEFAULT, help='视频模型')
+@click.option('--duration', '-d', type=click.Choice(VIDEO_DURATIONS), default=str(VIDEO_DURATION_DEFAULT), help='时长')
+@click.option('--resolution', '-r', type=click.Choice(VIDEO_RESOLUTIONS), default=VIDEO_RESOLUTION_DEFAULT, help='分辨率')
 @click.option('--output', '-o', help='输出文件路径')
 def video_generate_from_image(image, prompt, model, duration, resolution, output):
     """图生视频"""
@@ -293,7 +331,7 @@ def video_generate_from_image(image, prompt, model, duration, resolution, output
             image=image,
             prompt=prompt,
             model=model,
-            duration=duration,
+            duration=int(duration),
             resolution=resolution,
             save_path=output
         )
@@ -357,11 +395,16 @@ def chat():
 
 @chat.command('send')
 @click.option('--message', '-m', required=True, help='要发送的消息')
-@click.option('--model', default='MiniMax-M2.7', help='对话模型')
+@click.option('--model', type=click.Choice(CHAT_MODELS), default=CHAT_MODEL_DEFAULT, help='对话模型')
 @click.option('--system', '-s', default='', help='System 提示词')
-@click.option('--max-tokens', type=int, default=512, help='最大回复 Token')
-@click.option('--temperature', '-t', type=float, default=0.7, help='温度')
-@click.option('--top-p', type=float, default=0.95, help='Top P')
+@click.option(
+    '--max-tokens',
+    type=int,
+    default=CHAT_MAX_TOKENS_DEFAULT,
+    help=f'最大回复 Token ({CHAT_MAX_TOKENS_MIN}-{CHAT_MAX_TOKENS_MAX})',
+)
+@click.option('--temperature', '-t', type=float, default=CHAT_TEMPERATURE_DEFAULT, help='温度')
+@click.option('--top-p', type=float, default=CHAT_TOP_P_DEFAULT, help='Top P')
 def chat_send(message, model, system, max_tokens, temperature, top_p):
     """发送单条对话消息"""
     client = get_client()
@@ -402,11 +445,16 @@ def chat_send(message, model, system, max_tokens, temperature, top_p):
 
 
 @chat.command('interactive')
-@click.option('--model', default='MiniMax-M2.7', help='对话模型')
+@click.option('--model', type=click.Choice(CHAT_MODELS), default=CHAT_MODEL_DEFAULT, help='对话模型')
 @click.option('--system', '-s', default='', help='System 提示词')
-@click.option('--max-tokens', type=int, default=512, help='最大回复 Token')
-@click.option('--temperature', '-t', type=float, default=0.7, help='温度')
-@click.option('--top-p', type=float, default=0.95, help='Top P')
+@click.option(
+    '--max-tokens',
+    type=int,
+    default=CHAT_MAX_TOKENS_DEFAULT,
+    help=f'最大回复 Token ({CHAT_MAX_TOKENS_MIN}-{CHAT_MAX_TOKENS_MAX})',
+)
+@click.option('--temperature', '-t', type=float, default=CHAT_TEMPERATURE_DEFAULT, help='温度')
+@click.option('--top-p', type=float, default=CHAT_TOP_P_DEFAULT, help='Top P')
 def chat_interactive(model, system, max_tokens, temperature, top_p):
     """进入交互式多轮对话"""
     client = get_client()
@@ -471,7 +519,7 @@ def music():
 
 @music.command('generate')
 @click.option('--prompt', '-p', required=True, help='音乐描述（风格、情绪、场景）')
-@click.option('--model', '-m', default='music-2.6', help='音乐模型')
+@click.option('--model', '-m', type=click.Choice(MUSIC_MODELS), default=MUSIC_MODEL_DEFAULT, help='音乐模型')
 @click.option('--lyrics', '-l', help='歌词（使用\\n分隔）')
 @click.option('--instrumental', is_flag=True, help='纯音乐模式')
 @click.option('--audio', '-a', help='参考音频URL或路径（用于music-cover）')

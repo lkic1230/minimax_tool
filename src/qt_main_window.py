@@ -61,7 +61,8 @@ class MainWindow(QWidget):
     def setup_ui(self):
         """设置 UI"""
         self.setWindowTitle("MiniMax AI 生成工具 v1.0.0")
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(900, 820)
+        self.resize(900, 900)
 
         main_layout = QVBoxLayout(self)
 

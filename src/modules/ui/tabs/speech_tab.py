@@ -12,6 +12,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ..components.common import AudioPlayer, GenerationThread
+from ...core.constants import (
+    SPEECH_MODELS,
+    SPEECH_VOICES,
+    SPEECH_EMOTIONS,
+    SPEECH_EMOTION_API_MAP,
+)
 
 
 class SpeechTabWidget(QScrollArea):
@@ -56,17 +62,11 @@ class SpeechTabWidget(QScrollArea):
         params_layout = QFormLayout()
 
         self.speech_model = QComboBox()
-        self.speech_model.addItems([
-            "speech-2.8-hd", "speech-2.8-turbo",
-            "speech-2.6-hd", "speech-2.6-turbo"
-        ])
+        self.speech_model.addItems(SPEECH_MODELS)
         params_layout.addRow("模型:", self.speech_model)
 
         self.speech_voice = QComboBox()
-        self.speech_voice.addItems([
-            "female-tianmei", "female-yuanzi", "female-susanna",
-            "male-yuanbao", "male-hongren", "male-tianmei"
-        ])
+        self.speech_voice.addItems(SPEECH_VOICES)
         params_layout.addRow("音色:", self.speech_voice)
 
         self.speech_speed = QDoubleSpinBox()
@@ -76,7 +76,7 @@ class SpeechTabWidget(QScrollArea):
         params_layout.addRow("语速:", self.speech_speed)
 
         self.speech_emotion = QComboBox()
-        self.speech_emotion.addItems(["平静", "开心", "悲伤", "生气"])
+        self.speech_emotion.addItems(SPEECH_EMOTIONS)
         params_layout.addRow("情感:", self.speech_emotion)
 
         params_group.setLayout(params_layout)
@@ -118,8 +118,7 @@ class SpeechTabWidget(QScrollArea):
 
     @staticmethod
     def _emotion_to_api(text: str) -> str:
-        mapping = {"平静": "neutral", "开心": "happy", "悲伤": "sad", "生气": "angry"}
-        return mapping.get(text, "neutral")
+        return SPEECH_EMOTION_API_MAP.get(text, "neutral")
 
     # ==================== 生成逻辑 ====================
 

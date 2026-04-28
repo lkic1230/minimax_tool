@@ -4,6 +4,15 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Union
 
+from ...core.constants import (
+    VIDEO_MODELS,
+    VIDEO_MODEL_DEFAULT,
+    VIDEO_DURATIONS_INT,
+    VIDEO_DURATION_DEFAULT,
+    VIDEO_RESOLUTIONS,
+    VIDEO_RESOLUTION_DEFAULT,
+)
+
 
 class VideoDomainMixin:
     """视频生成相关方法。"""
@@ -30,13 +39,20 @@ class VideoDomainMixin:
     def generate_video(
         self,
         prompt: str,
-        model: str = "MiniMax-Hailuo-2.3",
-        duration: int = 6,
-        resolution: str = "768P",
+        model: str = VIDEO_MODEL_DEFAULT,
+        duration: int = VIDEO_DURATION_DEFAULT,
+        resolution: str = VIDEO_RESOLUTION_DEFAULT,
         prompt_optimizer: bool = True,
         callback_url: str = None,
         save_path: str = None,
     ) -> Dict[str, Any]:
+        if model not in VIDEO_MODELS:
+            raise ValueError(f"不支持的视频模型: {model}，可选: {', '.join(VIDEO_MODELS)}")
+        if duration not in VIDEO_DURATIONS_INT:
+            raise ValueError(f"不支持的时长: {duration}，可选: {VIDEO_DURATIONS_INT}")
+        if resolution not in VIDEO_RESOLUTIONS:
+            raise ValueError(f"不支持的分辨率: {resolution}，可选: {', '.join(VIDEO_RESOLUTIONS)}")
+
         data = {
             "model": model,
             "prompt": prompt,
@@ -55,12 +71,19 @@ class VideoDomainMixin:
         self,
         image: Union[str, Path],
         prompt: str = "",
-        model: str = "MiniMax-Hailuo-2.3",
-        duration: int = 6,
-        resolution: str = "768P",
+        model: str = VIDEO_MODEL_DEFAULT,
+        duration: int = VIDEO_DURATION_DEFAULT,
+        resolution: str = VIDEO_RESOLUTION_DEFAULT,
         prompt_optimizer: bool = True,
         save_path: str = None,
     ) -> Dict[str, Any]:
+        if model not in VIDEO_MODELS:
+            raise ValueError(f"不支持的视频模型: {model}，可选: {', '.join(VIDEO_MODELS)}")
+        if duration not in VIDEO_DURATIONS_INT:
+            raise ValueError(f"不支持的时长: {duration}，可选: {VIDEO_DURATIONS_INT}")
+        if resolution not in VIDEO_RESOLUTIONS:
+            raise ValueError(f"不支持的分辨率: {resolution}，可选: {', '.join(VIDEO_RESOLUTIONS)}")
+
         data = {
             "model": model,
             "first_frame_image": self._normalize_first_frame_image(image),

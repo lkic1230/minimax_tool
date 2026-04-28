@@ -3,6 +3,17 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from ...core.constants import (
+    IMAGE_MODELS,
+    IMAGE_MODEL_DEFAULT,
+    IMAGE_COUNT_MIN,
+    IMAGE_COUNT_MAX,
+    IMAGE_COUNT_DEFAULT,
+    IMAGE_ASPECT_RATIOS,
+    IMAGE_ASPECT_RATIO_DEFAULT,
+    IMAGE_STYLE_MODEL,
+)
+
 
 class ImageDomainMixin:
     """图像生成相关方法。"""
@@ -10,9 +21,9 @@ class ImageDomainMixin:
     def generate_image(
         self,
         prompt: str,
-        model: str = "image-01",
-        n: int = 1,
-        aspect_ratio: str = "1:1",
+        model: str = IMAGE_MODEL_DEFAULT,
+        n: int = IMAGE_COUNT_DEFAULT,
+        aspect_ratio: str = IMAGE_ASPECT_RATIO_DEFAULT,
         width: int = 1024,
         height: int = 1024,
         style: dict = None,
@@ -22,16 +33,21 @@ class ImageDomainMixin:
         watermark: bool = False,
         save_path: str = None,
     ) -> Dict[str, Any]:
+        if model not in IMAGE_MODELS:
+            raise ValueError(f"不支持的图像模型: {model}，可选: {', '.join(IMAGE_MODELS)}")
+        if aspect_ratio not in IMAGE_ASPECT_RATIOS:
+            raise ValueError(f"不支持的宽高比: {aspect_ratio}，可选: {', '.join(IMAGE_ASPECT_RATIOS)}")
+
         data = {
             "model": model,
             "prompt": prompt,
-            "n": min(max(1, n), 9),
+            "n": min(max(IMAGE_COUNT_MIN, n), IMAGE_COUNT_MAX),
             "aspect_ratio": aspect_ratio,
             "response_format": "url",
             "prompt_optimizer": prompt_optimizer,
         }
 
-        if style and model == "image-01-live":
+        if style and model == IMAGE_STYLE_MODEL:
             data["style"] = style
         if subject_reference:
             data["subject_reference"] = subject_reference

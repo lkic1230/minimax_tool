@@ -3,6 +3,16 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from ...core.constants import (
+    MUSIC_MODELS,
+    MUSIC_MODEL_DEFAULT,
+    MUSIC_COVER_MODELS,
+    MUSIC_COVER_MODEL_DEFAULT,
+    MUSIC_ORIGINAL_MODELS,
+    MUSIC_LYRICS_API_MODES,
+    MUSIC_LYRICS_API_MODE_DEFAULT,
+)
+
 
 class MusicDomainMixin:
     """音乐生成相关方法。"""
@@ -10,7 +20,7 @@ class MusicDomainMixin:
     def generate_music(
         self,
         prompt: str,
-        model: str = "music-2.6",
+        model: str = MUSIC_MODEL_DEFAULT,
         lyrics: str = None,
         is_instrumental: bool = False,
         audio_url: str = None,
@@ -20,15 +30,15 @@ class MusicDomainMixin:
         output_format: str = "url",
         save_path: str = None,
     ) -> Dict[str, Any]:
-        if model not in ["music-2.6", "music-cover", "music-2.6-free", "music-cover-free"]:
-            raise ValueError(f"不支持的模型: {model}，可选: music-2.6, music-cover, music-2.6-free, music-cover-free")
+        if model not in MUSIC_MODELS:
+            raise ValueError(f"不支持的模型: {model}，可选: {', '.join(MUSIC_MODELS)}")
 
         if not prompt:
             raise ValueError("prompt 不能为空")
         if len(prompt) > 2000:
             raise ValueError(f"prompt 长度不能超过 2000 字符，当前: {len(prompt)}")
 
-        if model in ["music-cover", "music-cover-free"] and len(prompt) < 10:
+        if model in MUSIC_COVER_MODELS and len(prompt) < 10:
             raise ValueError(f"music-cover 模式的 prompt 长度不能少于 10 字符，当前: {len(prompt)}")
 
         data = {
@@ -48,13 +58,13 @@ class MusicDomainMixin:
                 raise ValueError(f"lyrics 长度不能超过 3500 字符，当前: {len(lyrics)}")
             data["lyrics"] = lyrics
 
-        if lyrics_optimizer and model in ["music-2.6", "music-2.6-free"]:
+        if lyrics_optimizer and model in MUSIC_ORIGINAL_MODELS:
             data["lyrics_optimizer"] = True
 
-        if model in ["music-2.6", "music-2.6-free"] and not is_instrumental and not lyrics and not lyrics_optimizer:
+        if model in MUSIC_ORIGINAL_MODELS and not is_instrumental and not lyrics and not lyrics_optimizer:
             raise ValueError("music-2.6/music-2.6-free 非纯音乐模式需要提供 lyrics 参数，或设置 lyrics_optimizer=true 自动生成")
 
-        if model in ["music-cover", "music-cover-free"]:
+        if model in MUSIC_COVER_MODELS:
             if cover_feature_id:
                 data["cover_feature_id"] = cover_feature_id
             elif audio_url:
@@ -64,7 +74,7 @@ class MusicDomainMixin:
             else:
                 raise ValueError("music-cover 模式需要提供 audio_url、cover_feature_id 或 audio_base64")
 
-        if model in ["music-cover", "music-cover-free"] and lyrics:
+        if model in MUSIC_COVER_MODELS and lyrics:
             if len(lyrics) < 10 or len(lyrics) > 1000:
                 raise ValueError(f"music-cover 模式的 lyrics 长度需在 10-1000 字符，当前: {len(lyrics)}")
 
@@ -93,10 +103,10 @@ class MusicDomainMixin:
         self,
         audio_url: str = None,
         audio_base64: str = None,
-        model: str = "music-cover",
+        model: str = MUSIC_COVER_MODEL_DEFAULT,
     ) -> Dict[str, Any]:
-        if model != "music-cover":
-            raise ValueError("cover_preprocess 只支持 music-cover 模型")
+        if model not in MUSIC_COVER_MODELS:
+            raise ValueError(f"cover_preprocess 只支持翻唱模型: {', '.join(MUSIC_COVER_MODELS)}")
         if not audio_url and not audio_base64:
             raise ValueError("需要提供 audio_url 或 audio_base64")
         if audio_url and audio_base64:
@@ -112,12 +122,12 @@ class MusicDomainMixin:
 
     def generate_lyrics(
         self,
-        mode: str = "write_full_song",
+        mode: str = MUSIC_LYRICS_API_MODE_DEFAULT,
         prompt: str = None,
         lyrics: str = None,
         title: str = None,
     ) -> Dict[str, Any]:
-        if mode not in ["write_full_song", "edit"]:
+        if mode not in MUSIC_LYRICS_API_MODES:
             raise ValueError("mode 必须为 write_full_song 或 edit")
         if prompt and len(prompt) > 2000:
             raise ValueError(f"prompt 长度不能超过 2000，当前: {len(prompt)}")
@@ -132,4 +142,3 @@ class MusicDomainMixin:
         if title:
             data["title"] = title
         return self._post("/v1/lyrics_generation", data, timeout=60)
-

@@ -11,6 +11,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 
 from ..components.common import GenerationThread
+from ...core.constants import (
+    VIDEO_MODELS,
+    VIDEO_GENERATION_MODES,
+    VIDEO_DURATIONS,
+    VIDEO_RESOLUTIONS,
+)
 
 
 class VideoTabWidget(QScrollArea):
@@ -56,7 +62,7 @@ class VideoTabWidget(QScrollArea):
 
     def _create_mode_selector(self) -> QComboBox:
         self.video_mode = QComboBox()
-        self.video_mode.addItems(["文生视频", "图生视频"])
+        self.video_mode.addItems(VIDEO_GENERATION_MODES)
         self.video_mode.currentIndexChanged.connect(self._on_mode_changed)
         return self.video_mode
 
@@ -91,18 +97,15 @@ class VideoTabWidget(QScrollArea):
         params_layout = QFormLayout()
 
         self.video_model = QComboBox()
-        self.video_model.addItems([
-            "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-02",
-            "MiniMax-Hailuo-2.3-Fast"
-        ])
+        self.video_model.addItems(VIDEO_MODELS)
         params_layout.addRow("模型:", self.video_model)
 
         self.video_duration = QComboBox()
-        self.video_duration.addItems(["6", "10"])
+        self.video_duration.addItems(VIDEO_DURATIONS)
         params_layout.addRow("时长:", self.video_duration)
 
         self.video_resolution = QComboBox()
-        self.video_resolution.addItems(["512P", "720P", "768P", "1080P"])
+        self.video_resolution.addItems(VIDEO_RESOLUTIONS)
         params_layout.addRow("分辨率:", self.video_resolution)
 
         params_group.setLayout(params_layout)

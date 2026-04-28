@@ -13,6 +13,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ..components.common import AudioPlayer, GenerationThread
+from ...core.constants import (
+    MUSIC_ORIGINAL_MODELS,
+    MUSIC_COVER_MODELS,
+    MUSIC_ORIGINAL_MODES,
+    MUSIC_LYRICS_MODES,
+    MUSIC_LYRICS_MODE_EDIT,
+    MUSIC_LYRICS_MODE_API_MAP,
+    MUSIC_LYRICS_API_MODE_DEFAULT,
+)
 
 
 class MusicTabWidget(QScrollArea):
@@ -102,7 +111,7 @@ class MusicTabWidget(QScrollArea):
 
     @staticmethod
     def _lyrics_mode_to_api(text: str) -> str:
-        return {"完整歌曲": "write_full_song", "编辑续写": "edit"}.get(text, "write_full_song")
+        return MUSIC_LYRICS_MODE_API_MAP.get(text, MUSIC_LYRICS_API_MODE_DEFAULT)
 
     # ==================== 原创音乐面板 ====================
 
@@ -136,11 +145,11 @@ class MusicTabWidget(QScrollArea):
         params_layout = QFormLayout()
 
         self.original_model = QComboBox()
-        self.original_model.addItems(["music-2.6", "music-2.6-free"])
+        self.original_model.addItems(MUSIC_ORIGINAL_MODELS)
         params_layout.addRow("模型:", self.original_model)
 
         self.original_is_instrumental = QComboBox()
-        self.original_is_instrumental.addItems(["歌曲（有歌词）", "纯音乐"])
+        self.original_is_instrumental.addItems(MUSIC_ORIGINAL_MODES)
         self.original_is_instrumental.currentIndexChanged.connect(self._on_original_mode_changed)
         params_layout.addRow("模式:", self.original_is_instrumental)
 
@@ -226,7 +235,7 @@ class MusicTabWidget(QScrollArea):
         params_group = QGroupBox("参数设置")
         params_layout = QFormLayout()
         self.cover_model = QComboBox()
-        self.cover_model.addItems(["music-cover", "music-cover-free"])
+        self.cover_model.addItems(MUSIC_COVER_MODELS)
         params_layout.addRow("模型:", self.cover_model)
         params_group.setLayout(params_layout)
         return params_group
@@ -273,7 +282,7 @@ class MusicTabWidget(QScrollArea):
         lyrics_mode_group = QGroupBox("生成模式")
         lyrics_mode_layout = QFormLayout()
         self.lyrics_mode = QComboBox()
-        self.lyrics_mode.addItems(["完整歌曲", "编辑续写"])
+        self.lyrics_mode.addItems(MUSIC_LYRICS_MODES)
         self.lyrics_mode.currentIndexChanged.connect(self._on_lyrics_mode_changed)
         lyrics_mode_layout.addRow("模式:", self.lyrics_mode)
         lyrics_mode_group.setLayout(lyrics_mode_layout)
@@ -358,7 +367,7 @@ class MusicTabWidget(QScrollArea):
             self.original_lyrics.clear()
 
     def _on_lyrics_mode_changed(self, _index):
-        is_edit = (self.lyrics_mode.currentText() == "编辑续写")
+        is_edit = (self.lyrics_mode.currentText() == MUSIC_LYRICS_MODE_EDIT)
         self.lyrics_edit_group.setVisible(is_edit)
         self.lyrics_prompt.setVisible(not is_edit)
 
@@ -440,7 +449,7 @@ class MusicTabWidget(QScrollArea):
         def do_generate():
             client = self.client_getter()
             return client.generate_lyrics(
-                mode="write_full_song", prompt=prompt, title=title
+                mode=MUSIC_LYRICS_API_MODE_DEFAULT, prompt=prompt, title=title
             )
 
         self.generation_thread = GenerationThread(do_generate)
@@ -467,7 +476,7 @@ class MusicTabWidget(QScrollArea):
         lyrics_input = self.lyrics_edit_input.toPlainText().strip() if mode == "edit" else None
         title = self.lyrics_title.text().strip() or None
 
-        if mode == "write_full_song" and not prompt:
+        if mode == MUSIC_LYRICS_API_MODE_DEFAULT and not prompt:
             QMessageBox.warning(self, "警告", "请输入歌曲描述")
             return
 
@@ -480,7 +489,7 @@ class MusicTabWidget(QScrollArea):
 
         def do_generate():
             kwargs = {"mode": mode}
-            if mode == "write_full_song":
+            if mode == MUSIC_LYRICS_API_MODE_DEFAULT:
                 kwargs["prompt"] = prompt
             else:
                 kwargs["lyrics"] = lyrics_input
