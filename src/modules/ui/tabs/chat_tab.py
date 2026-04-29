@@ -121,6 +121,7 @@ class ChatTabWidget(QWidget):
         self._current_conv_title: str | None = None
         self._is_dirty = False
         self._suspend_dirty_tracking = False
+        self._is_generating = False
         self._history_manager = ChatHistoryManager()
         self._build_ui()
 
@@ -340,15 +341,39 @@ class ChatTabWidget(QWidget):
         sb = self.message_scroll.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    def _set_generating_state(self, is_generating: bool):
+        """统一控制生成中的 UI 交互状态，避免并发修改会话。"""
+        self._is_generating = is_generating
+        self.chat_send_btn.setEnabled(not is_generating)
+        self.chat_input.setEnabled(not is_generating)
+        self.new_chat_btn.setEnabled(not is_generating)
+        self.save_btn.setEnabled(not is_generating)
+        self.history_btn.setEnabled(not is_generating)
+        self.chat_clear_btn.setEnabled(not is_generating)
+
     @staticmethod
     def _strip_thinking_content(text: str) -> str:
         """去除模型返回中的思考片段，避免展示给用户。"""
         if not text:
             return ""
-        cleaned = re.sub(r"<think\b[^>]*>[\s\S]*?</think\s*>", "", text, flags=re.IGNORECASE)
-        cleaned = re.sub(r"</?think\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        return cleaned.strip()
+
+        fence_pattern = r"(```[\s\S]*?```|~~~[\s\S]*?~~~)"
+        parts = re.split(fence_pattern, text)
+
+        cleaned_parts = []
+        for part in parts:
+            if not part:
+                continue
+            if re.fullmatch(fence_pattern, part):
+                cleaned_parts.append(part)
+                continue
+
+            cleaned = re.sub(r"<think\b[^>]*>[\s\S]*?</think\s*>", "", part, flags=re.IGNORECASE)
+            cleaned = re.sub(r"</?think\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+            cleaned_parts.append(cleaned)
+
+        return "".join(cleaned_parts).strip()
 
     def _on_sampling_preset_changed(self, preset_name: str):
         """切换采样预设：预设值只读，自定义可手输。"""
@@ -383,12 +408,14 @@ class ChatTabWidget(QWidget):
         """发送文本对话消息"""
         if not self.check_client_func():
             return
+        if self._is_generating:
+            return
 
         user_text = self.chat_input.toPlainText().strip()
         if not user_text:
             return
 
-        self.chat_send_btn.setEnabled(False)
+        self._set_generating_state(True)
         self.chat_status.setText("正在生成回复...")
 
         user_msg = {"role": "user", "content": user_text}
@@ -422,7 +449,10 @@ class ChatTabWidget(QWidget):
 
     def on_chat_finished(self, result):
         """文本对话完成"""
-        self.chat_send_btn.setEnabled(True)
+        if self.sender() is not self.generation_thread:
+            return
+        self.generation_thread = None
+        self._set_generating_state(False)
 
         choices = result.get("choices", [])
         assistant_text = ""
@@ -453,12 +483,18 @@ class ChatTabWidget(QWidget):
 
     def on_chat_error(self, error_msg: str):
         """文本对话错误"""
-        self.chat_send_btn.setEnabled(True)
+        if self.sender() is not self.generation_thread:
+            return
+        self.generation_thread = None
+        self._set_generating_state(False)
         self.chat_status.setText("对话失败")
         QMessageBox.critical(self, "错误", f"对话失败: {error_msg}")
 
     def clear_chat_history(self):
         """清空文本对话历史"""
+        if self._is_generating:
+            QMessageBox.information(self, "提示", "正在生成回复，请稍后再清空对话。")
+            return
         self.chat_messages = []
         self._current_conv_id = None
         self._current_conv_title = None
@@ -475,6 +511,9 @@ class ChatTabWidget(QWidget):
 
     def _new_conversation(self):
         """新建对话（先提示保存）。"""
+        if self._is_generating:
+            QMessageBox.information(self, "提示", "正在生成回复，请稍后再新建对话。")
+            return
         if self.chat_messages and self._is_dirty:
             reply = QMessageBox.question(
                 self, "新对话",
@@ -544,6 +583,9 @@ class ChatTabWidget(QWidget):
 
     def _show_history(self):
         """展示历史对话弹窗，支持加载和删除。"""
+        if self._is_generating:
+            QMessageBox.information(self, "提示", "正在生成回复，请稍后再加载历史。")
+            return
         dialog = ChatHistoryDialog(self._history_manager, self)
         if dialog.exec() == QDialog.Accepted and dialog.selected_id:
             self._load_conversation(dialog.selected_id)

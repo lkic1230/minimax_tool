@@ -7,6 +7,7 @@ from .paths import (
     get_config_home,
     ensure_dirs,
 )
+from .app_meta import get_app_meta
 from .config_manager import ConfigManager, get_config_manager
 from .constants import (
     CHAT_MODEL_DEFAULT,
@@ -29,6 +30,7 @@ __all__ = [
     "get_cache_dir",
     "get_config_home",
     "ensure_dirs",
+    "get_app_meta",
     "ConfigManager",
     "get_config_manager",
     "CHAT_MODEL_DEFAULT",

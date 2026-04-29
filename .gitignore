@@ -30,6 +30,10 @@ app.log
 
 # 缓存
 cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # 临时文件
 *.tmp
@@ -45,3 +49,6 @@ cache/
 # 输出文件（按需保留）
 outputs/
 uploads/
+
+# 打包产物
+builds/

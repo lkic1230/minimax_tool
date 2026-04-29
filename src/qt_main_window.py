@@ -8,9 +8,9 @@ from PySide6.QtCore import Qt
 
 # 处理相对/绝对导入
 try:
-    from .modules.core import get_config_manager, get_outputs_dir, ensure_dirs
+    from .modules.core import get_app_meta, get_config_manager, get_outputs_dir, ensure_dirs
 except ImportError:
-    from modules.core import get_config_manager, get_outputs_dir, ensure_dirs
+    from modules.core import get_app_meta, get_config_manager, get_outputs_dir, ensure_dirs
 
 try:
     from .modules.api import MiniMaxClient
@@ -29,6 +29,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.client = None
+        self.app_meta = get_app_meta()
 
         # 初始化目录和配置
         ensure_dirs()
@@ -60,14 +61,14 @@ class MainWindow(QWidget):
 
     def setup_ui(self):
         """设置 UI"""
-        self.setWindowTitle("MiniMax AI 生成工具 v1.0.0")
+        self.setWindowTitle(f"{self.app_meta['display_name']} v{self.app_meta['version']}")
         self.setMinimumSize(900, 820)
         self.resize(900, 900)
 
         main_layout = QVBoxLayout(self)
 
         # 标题
-        title = QLabel("🎵 MiniMax AI 生成工具")
+        title = QLabel(f"🎵 {self.app_meta['display_name']}")
         title.setFont(QFont("Microsoft YaHei", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title)

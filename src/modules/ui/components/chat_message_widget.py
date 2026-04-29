@@ -1,13 +1,14 @@
 """
-聊天气泡组件。
+聊天气泡组件（支持 Markdown 渲染 + 双模式复制）。
 """
 from datetime import datetime
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QApplication
+    QTextEdit, QMenu, QApplication
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor
 
 
 # ==================== 样式常量 ====================
@@ -17,13 +18,15 @@ _USER_BUBBLE_STYLE = """
         background-color: #dcf8c6;
         border-radius: 12px;
     }
+    QWidget#userBubble QTextEdit {
+        background-color: transparent;
+        color: #1a1a1a;
+        border: none;
+        padding: 0;
+    }
     QWidget#userBubble QLabel {
         background-color: transparent;
         color: #1a1a1a;
-    }
-    QWidget#userBubble QLabel#bubbleContent {
-        color: #1a1a1a;
-        font-size: 13px;
     }
     QWidget#userBubble QLabel#bubbleTimestamp {
         color: #999;
@@ -38,13 +41,15 @@ _ASSISTANT_BUBBLE_STYLE = """
         border-radius: 12px;
         border: 1px solid #e0e0e0;
     }
+    QWidget#assistantBubble QTextEdit {
+        background-color: transparent;
+        color: #1a1a1a;
+        border: none;
+        padding: 0;
+    }
     QWidget#assistantBubble QLabel {
         background-color: transparent;
         color: #1a1a1a;
-    }
-    QWidget#assistantBubble QLabel#bubbleContent {
-        color: #1a1a1a;
-        font-size: 13px;
     }
     QWidget#assistantBubble QLabel#bubbleTimestamp {
         color: #999;
@@ -58,13 +63,15 @@ _SYSTEM_BUBBLE_STYLE = """
         background-color: #f0f0f0;
         border-radius: 6px;
     }
+    QWidget#systemBubble QTextEdit {
+        background-color: transparent;
+        color: #1a1a1a;
+        border: none;
+        padding: 0;
+    }
     QWidget#systemBubble QLabel {
         background-color: transparent;
         color: #1a1a1a;
-    }
-    QWidget#systemBubble QLabel#bubbleContent {
-        color: #1a1a1a;
-        font-size: 13px;
     }
     QWidget#systemBubble QLabel#bubbleTimestamp {
         color: #999;
@@ -74,6 +81,96 @@ _SYSTEM_BUBBLE_STYLE = """
 """
 
 _BUBBLE_MAX_WIDTH_RATIO = 0.75
+
+
+# ==================== Markdown 内容编辑框（只读 + 双模式复制） ====================
+
+def _resolve_markdown_copy_payload(
+    copy_raw: bool,
+    raw_content: str,
+    selected_text: str,
+    plain_text: str,
+) -> str:
+    """根据复制模式返回应写入剪贴板的内容。"""
+    if copy_raw:
+        return raw_content
+    if selected_text:
+        # QTextCursor 选中文本中的换行会变为 U+2029，需要转换回常规换行。
+        return selected_text.replace("\u2029", "\n")
+    return plain_text
+
+
+class _MarkdownTextEdit(QTextEdit):
+    """
+    只读文本编辑框，支持 Markdown 渲染和双模式复制。
+    - assistant/system: 渲染 Markdown 显示，复制时可选原文/纯文本
+    - user: 纯文本显示，直接复制
+    """
+
+    def __init__(self, raw_content: str, is_markdown: bool = False, parent=None):
+        super().__init__(parent)
+        self._raw_content = raw_content
+        self._is_markdown = is_markdown
+
+        self.setReadOnly(True)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.setFrameShape(QTextEdit.NoFrame)
+        self.setStyleSheet(
+            "QTextEdit { background-color: transparent; border: none; padding: 0; }"
+            "QTextEdit QScrollBar { width: 0; height: 0; }"
+        )
+        self.document().setDocumentMargin(0)
+
+        if is_markdown:
+            self.setMarkdown(raw_content)
+        else:
+            self.setPlainText(raw_content)
+        self._update_height()
+
+    def _update_height(self):
+        """根据文档内容与当前宽度动态更新高度，避免短文本气泡过高。"""
+        viewport_w = max(self.viewport().width(), 1)
+        self.document().setTextWidth(viewport_w)
+        doc_h = int(self.document().size().height())
+        min_h = self.fontMetrics().height()
+        self.setFixedHeight(max(doc_h, min_h) + 2)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_height()
+
+    def contextMenuEvent(self, event):
+        """自定义右键菜单，提供双模式复制。"""
+        menu = QMenu(self)
+
+        if self._is_markdown:
+            copy_raw_action = menu.addAction("复制 Markdown 原文")
+            copy_text_action = menu.addAction("复制纯文本")
+            action = menu.exec(QCursor.pos())
+            if action == copy_raw_action:
+                payload = _resolve_markdown_copy_payload(
+                    copy_raw=True,
+                    raw_content=self._raw_content,
+                    selected_text=self.textCursor().selectedText(),
+                    plain_text=self.toPlainText(),
+                )
+                QApplication.clipboard().setText(payload)
+            elif action == copy_text_action:
+                payload = _resolve_markdown_copy_payload(
+                    copy_raw=False,
+                    raw_content=self._raw_content,
+                    selected_text=self.textCursor().selectedText(),
+                    plain_text=self.toPlainText(),
+                )
+                QApplication.clipboard().setText(payload)
+        else:
+            # 纯文本：使用标准菜单
+            menu = self.createStandardContextMenu()
+            menu.exec(QCursor.pos())
 
 
 # ==================== 气泡组件 ====================
@@ -86,7 +183,6 @@ class MessageBubbleWidget(QWidget):
         super().__init__(parent)
         self.role = role
         self.setObjectName(f"{role}Bubble")
-        # 自定义 QWidget 需要此属性才能渲染 QSS 背景
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         # 作者名：user 默认 "我"，assistant 需外部传入模型名
@@ -110,13 +206,12 @@ class MessageBubbleWidget(QWidget):
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(2)
 
-        # 内容标签
-        content_label = QLabel(content)
-        content_label.setWordWrap(True)
-        content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        content_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        content_label.setObjectName("bubbleContent")
-        layout.addWidget(content_label)
+        # 内容编辑框（Markdown 或纯文本）
+        is_markdown = (role in ("assistant", "system"))
+        self._content_edit = _MarkdownTextEdit(content, is_markdown=is_markdown)
+        self._content_edit.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self._content_edit.setObjectName("bubbleContent")
+        layout.addWidget(self._content_edit)
 
         # 底部栏：时间 · 作者
         bottom_row = QHBoxLayout()
@@ -146,7 +241,7 @@ class MessageBubbleWidget(QWidget):
         layout.addLayout(bottom_row)
 
         # 气泡宽度约束
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
         self._apply_max_width()
 
     def _apply_max_width(self):
@@ -157,6 +252,8 @@ class MessageBubbleWidget(QWidget):
             self.setMaximumWidth(max(max_w, 200))
         else:
             self.setMaximumWidth(600)
+        if hasattr(self, "_content_edit"):
+            self._content_edit.setMaximumWidth(self.maximumWidth())
 
     def resizeEvent(self, event):
         """父容器 resize 时更新最大宽度。"""
@@ -184,7 +281,6 @@ def create_message_row(bubble: MessageBubbleWidget) -> QWidget:
     if bubble.role == "user":
         row_layout.addStretch()
         row_layout.addWidget(bubble)
-        # 右侧留一点边距
         spacer = QWidget()
         spacer.setFixedWidth(8)
         row_layout.addWidget(spacer)

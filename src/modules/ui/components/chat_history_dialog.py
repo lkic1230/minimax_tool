@@ -78,8 +78,13 @@ class ChatHistoryDialog(QDialog):
     def _refresh_list(self):
         """刷新列表。"""
         self.list_widget.clear()
+        self.selected_id = None
+        self.load_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
+        self.rename_btn.setEnabled(False)
         entries = self.history_manager.list_all()
         keyword = self.search_input.text().strip().lower() if hasattr(self, "search_input") else ""
+        visible_count = 0
         for entry in entries:
             title_str = entry.get("title", "未命名")
             model_str = entry.get("model", "")
@@ -104,8 +109,9 @@ class ChatHistoryDialog(QDialog):
             item.setToolTip(title_str)
 
             self.list_widget.addItem(item)
+            visible_count += 1
 
-        if not entries:
+        if visible_count == 0:
             self.list_widget.setItemWidget(
                 QListWidgetItem(self.list_widget),
                 QLabel("暂无保存的对话")
@@ -113,10 +119,12 @@ class ChatHistoryDialog(QDialog):
 
     def _on_select(self, item):
         """选中某一项。"""
-        self.selected_id = item.data(Qt.UserRole)
-        self.load_btn.setEnabled(True)
-        self.delete_btn.setEnabled(True)
-        self.rename_btn.setEnabled(True)
+        selected_id = item.data(Qt.UserRole)
+        self.selected_id = selected_id if selected_id else None
+        has_selection = self.selected_id is not None
+        self.load_btn.setEnabled(has_selection)
+        self.delete_btn.setEnabled(has_selection)
+        self.rename_btn.setEnabled(has_selection)
 
     def _on_load(self):
         """加载选中的对话。"""

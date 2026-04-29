@@ -11,16 +11,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from qt_main_window import MainWindow
+from modules.core import get_app_meta
 
 
 def main():
     """应用入口"""
+    app_meta = get_app_meta()
     app = QApplication(sys.argv)
 
     # 设置应用信息
-    app.setApplicationName("MiniMax AI 生成工具")
-    app.setApplicationVersion("1.0.0")
-    app.setOrganizationName("MiniMax")
+    app.setApplicationName(app_meta["display_name"])
+    app.setApplicationVersion(app_meta["version"])
+    app.setOrganizationName(app_meta["organization"])
 
     # 设置全局样式
     app.setStyle("Fusion")

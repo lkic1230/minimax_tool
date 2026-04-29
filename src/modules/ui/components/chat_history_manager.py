@@ -28,14 +28,15 @@ class ChatHistoryManager:
         保存一条对话记录，返回 conversation_id。
         传入 conv_id 时覆盖原记录，否则创建新记录。
         """
-        conv_id = conv_id or str(uuid.uuid4())[:8]
+        conv_id = conv_id or self._generate_conv_id()
         created_at = datetime.now().isoformat()
         old_entry = self.load(conv_id)
         if old_entry and old_entry.get("created_at"):
             created_at = old_entry["created_at"]
+        fallback_title = self._generate_title(messages)
         entry = {
             "id": conv_id,
-            "title": title or (messages[0]["content"][:30] + "..." if messages else "新对话"),
+            "title": title or fallback_title,
             "messages": messages,
             "model": model,
             "max_tokens": max_tokens,
@@ -107,10 +108,20 @@ class ChatHistoryManager:
     def _conv_path(self, conv_id: str) -> Path:
         return self._dir / f"{conv_id}.json"
 
+    def _generate_conv_id(self) -> str:
+        """生成不冲突的会话 ID。"""
+        for _ in range(5):
+            conv_id = str(uuid.uuid4())
+            if not self._conv_path(conv_id).exists():
+                return conv_id
+        raise RuntimeError("生成会话 ID 失败，请稍后重试。")
+
     def _generate_title(self, messages: List[Dict[str, str]]) -> str:
         """从第一条用户消息提取标题。"""
         for msg in messages:
             if msg.get("role") == "user":
-                content = msg["content"].strip()
+                content = str(msg.get("content", "")).strip()
+                if not content:
+                    continue
                 return content[:40] + ("..." if len(content) > 40 else "")
         return "新对话"

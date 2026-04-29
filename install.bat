@@ -17,23 +17,23 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] 正在安装工具（使用清华镜像源，开发模式）...
-pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+echo [2/3] 正在安装打包工具 PyInstaller（使用清华镜像源）...
+pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 if errorlevel 1 (
     echo.
-    echo [错误] 工具安装失败！
+    echo [错误] PyInstaller 安装失败！
     pause
     exit /b 1
 )
 
 echo.
-echo [3/3] 正在绑定当前设备并记录 MAC 指纹...
-python -m minimax_tool.src.cli config bind-device
+echo [3/3] 正在安装工具（使用清华镜像源，开发模式）...
+pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 if errorlevel 1 (
     echo.
-    echo [错误] 设备绑定失败！
+    echo [错误] 工具安装失败！
     pause
     exit /b 1
 )
