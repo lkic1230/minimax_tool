@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
     QTextEdit, QMenu, QApplication
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QCursor
 
 
@@ -80,7 +80,7 @@ _SYSTEM_BUBBLE_STYLE = """
     }
 """
 
-_BUBBLE_MAX_WIDTH_RATIO = 0.75
+_BUBBLE_MAX_WIDTH_RATIO = 0.86
 
 
 # ==================== Markdown 内容编辑框（只读 + 双模式复制） ====================
@@ -242,23 +242,41 @@ class MessageBubbleWidget(QWidget):
 
         # 气泡宽度约束
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+        self._observed_parent = None
         self._apply_max_width()
 
+    def _bind_parent_resize_event(self):
+        parent_widget = self.parentWidget()
+        if self._observed_parent is parent_widget:
+            return
+        if self._observed_parent:
+            self._observed_parent.removeEventFilter(self)
+        self._observed_parent = parent_widget
+        if self._observed_parent:
+            self._observed_parent.installEventFilter(self)
+
     def _apply_max_width(self):
-        """限制气泡最大宽度为父容器宽度的 75%。"""
+        """限制气泡最大宽度为父容器宽度的比例并随窗口变化自适应。"""
+        self._bind_parent_resize_event()
         parent_widget = self.parentWidget()
         if parent_widget:
             max_w = int(parent_widget.width() * _BUBBLE_MAX_WIDTH_RATIO)
-            self.setMaximumWidth(max(max_w, 200))
+            self.setMaximumWidth(max(max_w, 260))
         else:
-            self.setMaximumWidth(600)
+            self.setMaximumWidth(760)
         if hasattr(self, "_content_edit"):
-            self._content_edit.setMaximumWidth(self.maximumWidth())
+            self._content_edit.setMaximumWidth(max(self.maximumWidth() - 20, 120))
 
     def resizeEvent(self, event):
-        """父容器 resize 时更新最大宽度。"""
+        """自身尺寸变化时更新最大宽度。"""
         super().resizeEvent(event)
         self._apply_max_width()
+
+    def eventFilter(self, watched, event):
+        """监听父容器变化，保证窗口调整大小时气泡宽度及时更新。"""
+        if watched is self._observed_parent and event.type() in (QEvent.Resize, QEvent.Show):
+            self._apply_max_width()
+        return super().eventFilter(watched, event)
 
 
 # ==================== 消息包裹器（控制对齐） ====================

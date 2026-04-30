@@ -49,7 +49,7 @@ class TestStripThinkingContent(unittest.TestCase):
     def test_strip_standalone_think_tags(self):
         text = "A</think>\nB<think id='x'>\nC"
         cleaned = ChatTabWidget._strip_thinking_content(text)
-        self.assertEqual(cleaned, "A\nB\nC")
+        self.assertEqual(cleaned, "A\nB")
 
 
 if __name__ == "__main__":

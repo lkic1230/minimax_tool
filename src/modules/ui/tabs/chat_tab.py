@@ -369,6 +369,8 @@ class ChatTabWidget(QWidget):
                 continue
 
             cleaned = re.sub(r"<think\b[^>]*>[\s\S]*?</think\s*>", "", part, flags=re.IGNORECASE)
+            # 兜底：处理未闭合的 <think ...>，从起始标签移除到段尾。
+            cleaned = re.sub(r"<think\b[^>]*>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r"</?think\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
             cleaned_parts.append(cleaned)
