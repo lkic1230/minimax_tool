@@ -86,6 +86,10 @@ python -m minimax_tool.src.cli voices
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
+## 产品计划
+
+- 产品功能排期与优先级见：`docs/PRODUCT_PLAN.md`
+
 ## 配置文件位置
 
 - API Key 加密存储：

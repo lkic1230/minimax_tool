@@ -149,6 +149,21 @@ class ConfigTabWidget(QScrollArea):
         security_info_layout.addWidget(config_dir_label, 1)
         security_layout.addLayout(security_info_layout)
 
+        cache_info_layout = QHBoxLayout()
+        cache_info_layout.addWidget(QLabel("缓存目录:"))
+        self.cache_dir_label = QLabel(self.config_manager.get_config_info().get("cache_dir", ""))
+        self.cache_dir_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.cache_dir_label.setWordWrap(True)
+        cache_info_layout.addWidget(self.cache_dir_label, 1)
+        security_layout.addLayout(cache_info_layout)
+
+        open_cache_btn = self._make_button(
+            "📂 打开缓存目录",
+            self._open_cache_dir,
+            tooltip="打开缓存目录，便于手动清理特定缓存文件",
+        )
+        security_layout.addWidget(open_cache_btn)
+
         clear_cache_btn = self._make_button(
             "🧹 清除缓存",
             self._clear_cache,
@@ -278,6 +293,18 @@ class ConfigTabWidget(QScrollArea):
             QMessageBox.information(self, "成功", "缓存已清除")
         else:
             QMessageBox.warning(self, "失败", "清除缓存失败")
+
+    def _open_cache_dir(self):
+        cache_dir = self.config_manager.get_config_info().get("cache_dir", "")
+        if not cache_dir:
+            QMessageBox.warning(self, "提示", "未获取到缓存目录路径")
+            return
+
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            os.startfile(cache_dir)
+        except Exception as e:
+            QMessageBox.warning(self, "提示", f"打开缓存目录失败: {e}")
 
     def _clear_all_data(self):
         reply = QMessageBox.warning(
