@@ -139,9 +139,26 @@ class _MarkdownTextEdit(QTextEdit):
         min_h = self.fontMetrics().height()
         self.setFixedHeight(max(doc_h, min_h) + 2)
 
+    def preferred_width(self, min_width: int, max_width: int) -> int:
+        """根据文本内容估算更合理的显示宽度。"""
+        plain = (self.toPlainText() or "").replace("\t", "    ")
+        lines = plain.splitlines() or [plain]
+        fm = self.fontMetrics()
+        longest = 0
+        for line in lines:
+            # 对极长单行进行上限截断，避免异常字符串导致宽度估算过大。
+            sample = line[:240]
+            longest = max(longest, fm.horizontalAdvance(sample))
+        estimated = longest + 24
+        return max(min_width, min(max_width, estimated))
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_height()
+
+    def wheelEvent(self, event):
+        """禁用气泡内部滚轮滚动，交由外层消息区域处理。"""
+        event.ignore()
 
     def contextMenuEvent(self, event):
         """自定义右键菜单，提供双模式复制。"""
@@ -241,7 +258,7 @@ class MessageBubbleWidget(QWidget):
         layout.addLayout(bottom_row)
 
         # 气泡宽度约束
-        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         self._observed_parent = None
         self._apply_max_width()
 
@@ -265,7 +282,9 @@ class MessageBubbleWidget(QWidget):
         else:
             self.setMaximumWidth(760)
         if hasattr(self, "_content_edit"):
-            self._content_edit.setMaximumWidth(max(self.maximumWidth() - 20, 120))
+            content_max = max(self.maximumWidth() - 20, 120)
+            preferred = self._content_edit.preferred_width(min_width=120, max_width=content_max)
+            self._content_edit.setFixedWidth(preferred)
 
     def resizeEvent(self, event):
         """自身尺寸变化时更新最大宽度。"""
@@ -312,5 +331,8 @@ def create_message_row(bubble: MessageBubbleWidget) -> QWidget:
         row_layout.addStretch()
         row_layout.addWidget(bubble)
         row_layout.addStretch()
+
+    # 绑定到行容器后再计算一次宽度，避免初次创建时父级尚未就绪导致宽度偏窄。
+    bubble._apply_max_width()
 
     return row
