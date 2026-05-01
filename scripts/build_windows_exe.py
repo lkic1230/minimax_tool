@@ -89,6 +89,7 @@ def main() -> None:
         "--noconfirm",
         "--clean",
         "--onedir",
+        "--noupx",
         "--name",
         artifact_name,
         "--paths",
@@ -109,7 +110,7 @@ def main() -> None:
     else:
         cmd.extend(["--console", "--debug", "all"])
 
-    print(f"[开始] 使用 PyInstaller 打包 (onedir, mode={mode_title})...")
+    print(f"[开始] 使用 PyInstaller 打包 (onedir, noupx, mode={mode_title})...")
     print(f"[应用] {app_name} v{app_version}")
     print("[命令] " + " ".join(cmd))
     run(cmd, cwd=project_root)
