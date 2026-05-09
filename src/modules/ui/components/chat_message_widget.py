@@ -100,9 +100,14 @@ def _resolve_markdown_copy_payload(
     return plain_text
 
 
-class _MarkdownTextEdit(QTextEdit):
+from PySide6.QtWidgets import QTextEdit, QTextBrowser, QWidget
+from PySide6.QtGui import QFont, QTextCursor, QMouseEvent
+
+
+class _MarkdownTextEdit(QTextBrowser):
     """
     只读文本编辑框，支持 Markdown 渲染和双模式复制。
+    继承 QTextBrowser 以支持链接点击。
     - assistant/system: 渲染 Markdown 显示，复制时可选原文/纯文本
     - user: 纯文本显示，直接复制
     """
@@ -115,6 +120,7 @@ class _MarkdownTextEdit(QTextEdit):
         self.setReadOnly(True)
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.setOpenExternalLinks(True)  # 允许点击外部链接
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
@@ -128,8 +134,17 @@ class _MarkdownTextEdit(QTextEdit):
         if is_markdown:
             self.setMarkdown(raw_content)
         else:
-            self.setPlainText(raw_content)
+            # 将 URL 转为蓝色可点击链接
+            html_content = self._make_linkable(raw_content)
+            self.setHtml(html_content)
         self._update_height()
+
+    def _make_linkable(self, text: str) -> str:
+        """将 URL 转为蓝色可点击链接"""
+        import re
+        url_pattern = re.compile(r'(https?://[^\s\<\>\"\'\)]+)')
+        # 给链接添加蓝色样式
+        return url_pattern.sub(r'<a href="\1" style="color:#1976d2;text-decoration:underline;">\1</a>', text)
 
     def _update_height(self):
         """根据文档内容与当前宽度动态更新高度，避免短文本气泡过高。"""

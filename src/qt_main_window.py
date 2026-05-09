@@ -86,7 +86,7 @@ class MainWindow(QWidget):
         # Tab 控件
         self.tabs = QTabWidget()
 
-        self.chat_tab = ui_tabs.ChatTabWidget(
+        self.chat_tab = ui_tabs.EnhancedChatTabWidget(
             client_getter=self._get_client,
             check_client_func=self._check_client,
             get_show_thinking_func=self.config_manager.get_show_thinking,
