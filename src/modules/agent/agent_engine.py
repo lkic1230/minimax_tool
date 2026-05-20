@@ -8,6 +8,7 @@ Agent Engine - AI 驱动的 Agent 核心引擎。
 """
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from enum import Enum
@@ -38,6 +39,7 @@ class AgentState:
     task_steps: List[Dict] = field(default_factory=list)
     awaiting_confirmation: bool = False
     confirmation_message: str = ""
+    stopped: bool = False  # 用户主动停止标记
 
 
 class AgentEngine:
@@ -116,13 +118,68 @@ class AgentEngine:
         # 第三步：执行工具
         self._update_status("🚀 执行任务...")
         all_results = []
+        total_steps = len(steps)
+        collected_sources = []  # 收集所有来源用于最终展示
+
         for i, step_info in enumerate(steps):
+            # 检查停止标记
+            if self.state.stopped:
+                self._update_status("⏹️ 已停止")
+                return {
+                    "type": "agent",
+                    "content": "任务已被用户停止。",
+                    "task_plan": task_plan,
+                    "stopped": True,
+                    "sources": collected_sources,
+                }
+
             tool_name = step_info.get("tool", "")
             params = step_info.get("params", {})
             action_desc = step_info.get("action", f"步骤{i+1}")
-            self._update_status(f"📋 {action_desc}...")
 
+            # 发出步骤开始事件
+            if self.on_step_update:
+                self.on_step_update({
+                    "type": "step_start",
+                    "step_index": i,
+                    "total_steps": total_steps,
+                    "action": action_desc,
+                    "tool": tool_name,
+                    "params": params,
+                })
+
+            # 在状态中显示具体的搜索内容
+            if tool_name in ("web_search", "搜索"):
+                query = params.get("query", "")
+                self._update_status(f"🔍 搜索: {query}")
+            elif tool_name in ("web_scrape", "抓取"):
+                url = params.get("url", "")
+                display_url = url if len(url) <= 60 else url[:57] + "..."
+                self._update_status(f"🌐 抓取: {display_url}")
+            elif tool_name in ("file_read", "读取文件"):
+                path = params.get("path", params.get("file_path", ""))
+                self._update_status(f"📄 读取文件: {path}")
+            else:
+                self._update_status(f"📋 {action_desc}...")
+
+            step_start_time = time.time()
             result = self._execute_tool(tool_name, params)
+            step_elapsed = time.time() - step_start_time
+
+            # 搜索完成后在状态中显示结果数量摘要，并收集来源
+            if result.success and tool_name in ("web_search", "搜索"):
+                data = result.data or {}
+                results_list = data.get("results", [])
+                results_count = len(results_list)
+                self._update_status(f"✅ 搜索完成: 找到 {results_count} 条结果")
+                # 收集来源信息
+                for item in results_list:
+                    collected_sources.append({
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "snippet": item.get("snippet", ""),
+                    })
+
             all_results.append({
                 "step": i + 1,
                 "tool": tool_name,
@@ -130,7 +187,19 @@ class AgentEngine:
                 "success": result.success,
                 "result": result.data if result.success else None,
                 "error": result.error if not result.success else None,
+                "elapsed": round(step_elapsed, 1),
             })
+
+            # 发出步骤完成事件
+            if self.on_step_update:
+                self.on_step_update({
+                    "type": "step_complete",
+                    "step_index": i,
+                    "total_steps": total_steps,
+                    "action": action_desc,
+                    "success": result.success,
+                    "elapsed": round(step_elapsed, 1),
+                })
 
         # 第四步：LLM 生成最终报告
         self._update_status("📝 生成报告...")
@@ -140,6 +209,7 @@ class AgentEngine:
             "type": "agent",
             "content": report,
             "task_plan": task_plan,
+            "sources": collected_sources,
         }
     
     def _analyze_intent(self, user_message: str, conversation_history: List[Dict]) -> Dict:
@@ -159,7 +229,9 @@ class AgentEngine:
 可以直接回复的情况：用户只是在聊天、问候；用户只是问简单问题；用户想要解释概念。
 
 请返回以下格式的 JSON（直接返回 JSON，不要其他内容）：
-{"needs_agent": true或false, "reason": "判断理由", "task_plan": {"goal": "任务目标", "steps": [{"action": "动作描述", "tool": "工具名", "params": {"参数"}}]}, "confirmation": "需要用户确认的内容(可选)", "response": "如果是普通对话，直接回复用户的内容"}"""
+{"needs_agent": true或false, "reason": "判断理由", "task_plan": {"goal": "任务目标", "steps": [{"action": "动作描述", "tool": "web_search 或 web_scrape", "params": {"参数": "值"}}]}, "confirmation": "需要用户确认的内容(可选)", "response": "如果是普通对话，直接回复用户的内容"}
+
+重要：tool 字段只能使用以下两个工具名之一：web_search（联网搜索）、web_scrape（抓取网页）。禁止使用其他工具名。"""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -257,38 +329,27 @@ class AgentEngine:
         """执行任务计划"""
         steps = task_plan.get("steps", [])
         all_results = []
-        
+
         for i, step_info in enumerate(steps):
             tool_name = step_info.get("tool", "")
             params = step_info.get("params", {})
-            
-            self._update_status(f"📋 步骤 {i+1}: {step_info.get('action', '执行中')}")
-            
+            action_desc = step_info.get("action", f"步骤{i+1}")
+
+            self._update_status(f"📋 步骤 {i+1}: {action_desc}")
+
             result = self._execute_tool(tool_name, params)
-            
-            if result.success:
-                all_results.append({
-                    "step": i + 1,
-                    "tool": tool_name,
-                    "result": result.data
-                })
-            else:
-                all_results.append({
-                    "step": i + 1,
-                    "tool": tool_name,
-                    "error": result.error
-                })
-        
+
+            all_results.append({
+                "step": i + 1,
+                "tool": tool_name,
+                "action": action_desc,
+                "success": result.success,
+                "result": result.data if result.success else None,
+                "error": result.error if not result.success else None,
+            })
+
         # 生成报告
         return self._generate_final_report(task_plan.get("goal", ""), all_results)
-        
-        # 如果解析失败，返回默认计划
-        return {
-            "analysis": "执行搜索任务",
-            "steps": [
-                {"step": 1, "action": "搜索", "tool": "web_search", "params": {"query": goal}}
-            ]
-        }
 
     def _execute_task_loop(self, goal: str, messages: List[Dict], plan: Dict) -> str:
         """执行任务循环"""
@@ -435,6 +496,7 @@ class AgentEngine:
 
     def stop(self):
         """停止当前任务"""
+        self.state.stopped = True
         if self.state.current_task:
             self.task_manager.cancel_task(self.state.current_task.id)
             self.state.current_task = None

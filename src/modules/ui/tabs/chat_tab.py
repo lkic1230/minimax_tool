@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QTimer
 
 from ..components.common import GenerationThread
 from ..components.chat_message_widget import (
-    MessageBubbleWidget, create_message_row
+    MessageBubbleWidget, create_message_row, create_status_row
 )
 from ..components.chat_history_manager import ChatHistoryManager
 from ..components.chat_history_dialog import ChatHistoryDialog
@@ -352,30 +352,77 @@ class ChatTabWidget(QWidget):
         self.chat_clear_btn.setEnabled(not is_generating)
 
     @staticmethod
-    def _strip_thinking_content(text: str) -> str:
-        """去除模型返回中的思考片段，避免展示给用户。"""
+    def _extract_thinking_content(text: str) -> tuple:
+        """
+        从模型返回中分离思考内容和回复内容。
+        返回: (thinking_content, response_content)
+        - thinking_content: 思考过程（如果有）
+        - response_content: 正式回复内容
+        """
         if not text:
-            return ""
+            return ("", "")
+
+        # 用于匹配各种格式的思考内容
+        thinking_parts = []
+        response_parts = []
 
         fence_pattern = r"(```[\s\S]*?```|~~~[\s\S]*?~~~)"
         parts = re.split(fence_pattern, text)
 
-        cleaned_parts = []
         for part in parts:
             if not part:
                 continue
             if re.fullmatch(fence_pattern, part):
-                cleaned_parts.append(part)
+                response_parts.append(part)
                 continue
 
-            cleaned = re.sub(r"<think\b[^>]*>[\s\S]*?</think\s*>", "", part, flags=re.IGNORECASE)
-            # 兜底：处理未闭合的 <think ...>，从起始标签移除到段尾。
-            cleaned = re.sub(r"<think\b[^>]*>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
-            cleaned = re.sub(r"</?think\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
-            cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-            cleaned_parts.append(cleaned)
+            # 提取思考内容
+            original_part = part
 
-        return "".join(cleaned_parts).strip()
+            # 格式1: <think>...</think>
+            think_match = re.search(r"<think\b[^>]*>([\s\S]*?)</think\s*>", part, re.IGNORECASE)
+            if think_match:
+                thinking_parts.append(think_match.group(1).strip())
+                part = re.sub(r"<think\b[^>]*>[\s\S]*?</think\s*>", "", part, flags=re.IGNORECASE)
+
+            # 格式2: 「<think>」「」
+            think_match = re.search(r"「<think>」([\s\S]*?)「/", part)
+            if think_match:
+                thinking_parts.append(think_match.group(1).strip())
+                part = re.sub(r"「<think>」[\s\S]*?「/", "", part)
+
+            # 格式3: 【思考】【/思考】
+            think_match = re.search(r"【思考】([\s\S]*?)【/思考】", part)
+            if think_match:
+                thinking_parts.append(think_match.group(1).strip())
+                part = re.sub(r"【思考】[\s\S]*?【/思考】", "", part)
+
+            # 格式4: U+1F9E0 brain emoji (M2.7 模型输出格式)
+            think_match = re.search(re.escape("🧠") + r"([\s\S]*?)" + re.escape("🧠"), part)
+            if think_match:
+                thinking_parts.append(think_match.group(1).strip())
+                part = re.sub(re.escape("🧠") + r"[\s\S]*?" + re.escape("🧠"), "", part)
+
+            # 清理残留标签
+            part = re.sub(r"</?think\b[^>]*>", "", part, flags=re.IGNORECASE)
+            part = re.sub(r"^\s*<think>\s*$", "", part, flags=re.MULTILINE)
+            part = re.sub(r"^\s*</think>\s*$", "", part, flags=re.MULTILINE)
+            part = re.sub(r"^\s*【思考】\s*$", "", part, flags=re.MULTILINE)
+            part = re.sub(r"^\s*【/思考】\s*$", "", part, flags=re.MULTILINE)
+            part = re.sub(r"\n{3,}", "\n\n", part)
+
+            response_parts.append(part)
+
+        thinking = "".join(thinking_parts).strip()
+        response = "".join(response_parts).strip()
+
+        return (thinking, response)
+
+    @staticmethod
+    def _strip_thinking_content(text: str) -> str:
+        """兼容旧接口：只返回清理后的内容"""
+        _, response = ChatTabWidget._extract_thinking_content(text)
+        return response
 
     def _on_sampling_preset_changed(self, preset_name: str):
         """切换采样预设：预设值只读，自定义可手输。"""
@@ -458,20 +505,26 @@ class ChatTabWidget(QWidget):
 
         choices = result.get("choices", [])
         assistant_text = ""
+        thinking_text = ""
         if choices:
             message = choices[0].get("message", {})
             raw_content = message.get("content", "")
             if self.get_show_thinking_func():
-                assistant_text = raw_content.strip()
+                # 显示思考时，分离内容后作为折叠区渲染
+                thinking_text, assistant_text = self._extract_thinking_content(raw_content)
+                if not assistant_text:
+                    # 分离失败时回退到原始内容
+                    assistant_text = raw_content.strip()
             else:
-                assistant_text = self._strip_thinking_content(raw_content)
+                # 不显示思考时，直接剥离
+                _, assistant_text = self._extract_thinking_content(raw_content)
 
         if assistant_text:
             self.chat_messages.append({"role": "assistant", "content": assistant_text})
             self._mark_conversation_dirty()
             # 从 API 返回中取模型名显示在气泡底部
             model_name = result.get("model", self.chat_model.currentText())
-            self._append_message("assistant", assistant_text, author=model_name)
+            self._append_message("assistant", assistant_text, author=model_name, thinking=thinking_text)
             usage = result.get("usage", {})
             total_tokens = usage.get("total_tokens")
             if total_tokens is not None:
@@ -649,8 +702,31 @@ class ChatTabWidget(QWidget):
         self._mark_conversation_clean()
         self.chat_status.setText(f"已加载对话: {data.get('title', '')}")
 
-    def _append_message(self, role: str, content: str, author: str = None):
-        """向消息列表追加一条气泡消息。"""
+    def _append_message(self, role: str, content: str, author: str = None, thinking: str = ""):
+        """向消息列表追加一条气泡消息。thinking 内容作为独立折叠行渲染在气泡上方。"""
+        # 思考折叠区：独立行，不嵌入气泡内部
+        if thinking and role == "assistant":
+            from ..components.chat_message_widget import ThinkingCollapsibleWidget
+            thinking_widget = ThinkingCollapsibleWidget(thinking)
+            thinking_widget.setMaximumWidth(
+                int(self.message_scroll.viewport().width() * 0.86)
+                if self.message_scroll.viewport().width() > 0
+                else 600
+            )
+            thinking_row = QWidget()
+            thinking_row.setStyleSheet("background-color: transparent;")
+            thinking_layout = QHBoxLayout(thinking_row)
+            thinking_layout.setContentsMargins(8, 0, 8, 0)
+            thinking_layout.setSpacing(0)
+            spacer_l = QWidget()
+            spacer_l.setFixedWidth(8)
+            thinking_layout.addWidget(spacer_l)
+            thinking_layout.addWidget(thinking_widget)
+            thinking_layout.addStretch()
+            count = self.message_list_layout.count()
+            self.message_list_layout.insertWidget(count - 1, thinking_row)
+
+        # 主气泡
         bubble = MessageBubbleWidget(role, content, author=author)
         row = create_message_row(bubble)
 
@@ -660,3 +736,11 @@ class ChatTabWidget(QWidget):
 
         # 延迟滚动到底部
         QTimer.singleShot(50, self._scroll_to_bottom)
+
+    def _append_status_bubble(self, status_text: str):
+        """向消息列表追加一条状态气泡（居中显示）。"""
+        row = create_status_row(status_text)
+        count = self.message_list_layout.count()
+        self.message_list_layout.insertWidget(count - 1, row)
+        QTimer.singleShot(50, self._scroll_to_bottom)
+        return row

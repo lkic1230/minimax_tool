@@ -1,14 +1,14 @@
 """
-聊天气泡组件（支持 Markdown 渲染 + 双模式复制）。
+聊天气泡组件（支持 Markdown 渲染 + 双模式复制 + 思考折叠 + 状态气泡）。
 """
 from datetime import datetime
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QTextEdit, QMenu, QApplication
+    QTextEdit, QMenu, QApplication, QPushButton
 )
-from PySide6.QtCore import Qt, QEvent
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QCursor, QFontMetrics
 
 
 # ==================== 样式常量 ====================
@@ -81,6 +81,169 @@ _SYSTEM_BUBBLE_STYLE = """
 """
 
 _BUBBLE_MAX_WIDTH_RATIO = 0.86
+
+
+# ==================== 思考内容折叠组件 ====================
+
+_THINKING_WIDGET_STYLE = """
+    QWidget#thinkingContainer {
+        background-color: transparent;
+        border: none;
+        border-left: 3px solid #b0c4de;
+        border-radius: 0px;
+    }
+"""
+
+_THINKING_HEADER_STYLE = """
+    QPushButton {
+        background-color: transparent;
+        border: none;
+        padding: 6px 10px;
+        text-align: left;
+        color: #888;
+        font-size: 12px;
+        font-weight: normal;
+    }
+    QPushButton:hover {
+        color: #555;
+        background-color: #eeeeee;
+        border-radius: 4px;
+    }
+"""
+
+_THINKING_CONTENT_STYLE = """
+    QTextEdit#thinkingContent {
+        background-color: transparent;
+        color: #777;
+        border: none;
+        border-top: 1px solid #e0e0e0;
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+"""
+
+
+class ThinkingCollapsibleWidget(QWidget):
+    """可折叠的思考过程组件，显示在 assistant 气泡内部。"""
+
+    def __init__(self, thinking_content: str, parent=None):
+        super().__init__(parent)
+        self._is_expanded = False
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setObjectName("thinkingContainer")
+        self.setStyleSheet(_THINKING_WIDGET_STYLE)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 折叠头部按钮
+        self._toggle_btn = QPushButton("💭 思考过程  ▶")
+        self._toggle_btn.setStyleSheet(_THINKING_HEADER_STYLE)
+        self._toggle_btn.setCursor(Qt.PointingHandCursor)
+        self._toggle_btn.clicked.connect(self._toggle)
+        layout.addWidget(self._toggle_btn)
+
+        # 思考内容（折叠时隐藏）
+        self._content_edit = QTextEdit(thinking_content)
+        self._content_edit.setObjectName("thinkingContent")
+        self._content_edit.setStyleSheet(_THINKING_CONTENT_STYLE)
+        self._content_edit.setReadOnly(True)
+        self._content_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self._content_edit.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._content_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._content_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content_edit.setVisible(False)
+        # 初始高度设定（展开后动态调整）
+        self._content_edit.setFixedHeight(0)
+        layout.addWidget(self._content_edit)
+
+        self.setFixedHeight(self._toggle_btn.sizeHint().height())
+
+    def _toggle(self):
+        """展开/折叠切换"""
+        self._is_expanded = not self._is_expanded
+        if self._is_expanded:
+            self._toggle_btn.setText("💭 思考过程  ▼")
+            self._content_edit.setVisible(True)
+            # 动态计算内容高度
+            fm = QFontMetrics(self._content_edit.font())
+            text = self._content_edit.toPlainText()
+            lines = text.count('\n') + 1
+            # 考虑自动换行
+            viewport_w = max(self._content_edit.viewport().width(), 100)
+            for line in text.split('\n'):
+                line_width = fm.horizontalAdvance(line)
+                if line_width > 0:
+                    wrapped = max(1, int(line_width / viewport_w))
+                    lines += wrapped - 1
+            content_h = max(fm.height() * min(lines, 8), 40) + 16  # 最大8行，padding 16
+            self._content_edit.setFixedHeight(content_h)
+            self.setFixedHeight(self._toggle_btn.sizeHint().height() + content_h)
+        else:
+            self._toggle_btn.setText("💭 思考过程  ▶")
+            self._content_edit.setVisible(False)
+            self._content_edit.setFixedHeight(0)
+            self.setFixedHeight(self._toggle_btn.sizeHint().height())
+
+
+# ==================== 状态气泡组件 ====================
+
+_STATUS_BUBBLE_STYLE = """
+    QWidget#statusBubble {
+        background-color: rgba(255, 255, 255, 0.7);
+        border: 1px solid #ddd;
+        border-radius: 12px;
+    }
+    QLabel#statusText {
+        color: #666;
+        font-size: 12px;
+        padding: 4px 0;
+    }
+"""
+
+
+class StatusBubbleWidget(QWidget):
+    """对话区域内的状态指示气泡（居中显示），如搜索进度、工具执行状态等。"""
+
+    def __init__(self, status_text: str, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setObjectName("statusBubble")
+        self.setStyleSheet(_STATUS_BUBBLE_STYLE)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 4, 12, 4)
+
+        label = QLabel(status_text)
+        label.setObjectName("statusText")
+        layout.addWidget(label)
+
+    def update_text(self, new_text: str):
+        """更新状态文字"""
+        for child in self.findChildren(QLabel, "statusText"):
+            child.setText(new_text)
+            return
+
+
+# ==================== 创建状态气泡行 ====================
+
+def create_status_row(status_text: str) -> QWidget:
+    """创建一条居中的状态气泡行。"""
+    row = QWidget()
+    row.setObjectName("statusRow")
+    row.setAttribute(Qt.WA_StyledBackground, True)
+    row.setStyleSheet("QWidget#statusRow { background-color: transparent; }")
+    row_layout = QHBoxLayout(row)
+    row_layout.setContentsMargins(8, 1, 8, 1)
+    row_layout.setSpacing(0)
+
+    bubble = StatusBubbleWidget(status_text)
+    row_layout.addStretch()
+    row_layout.addWidget(bubble)
+    row_layout.addStretch()
+
+    return row
 
 
 # ==================== Markdown 内容编辑框（只读 + 双模式复制） ====================
@@ -208,10 +371,13 @@ class _MarkdownTextEdit(QTextBrowser):
 # ==================== 气泡组件 ====================
 
 class MessageBubbleWidget(QWidget):
-    """单条聊天气泡（支持 user / assistant / system 三种角色）。"""
+    """单条聊天气泡（支持 user / assistant / system 三种角色）。
+
+    assistant 气泡支持可选的 thinking_content 参数，会渲染为可折叠区域。
+    """
 
     def __init__(self, role: str, content: str, timestamp: str = None,
-                 author: str = None, parent=None):
+                 author: str = None, thinking_content: str = "", parent=None):
         super().__init__(parent)
         self.role = role
         self.setObjectName(f"{role}Bubble")
@@ -237,6 +403,12 @@ class MessageBubbleWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(2)
+
+        # 思考折叠区（仅 assistant 且有思考内容时显示）
+        self._thinking_widget = None
+        if role == "assistant" and thinking_content:
+            self._thinking_widget = ThinkingCollapsibleWidget(thinking_content)
+            layout.addWidget(self._thinking_widget)
 
         # 内容编辑框（Markdown 或纯文本）
         is_markdown = (role in ("assistant", "system"))

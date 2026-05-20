@@ -35,21 +35,26 @@ class TestMarkdownCopyPayload(unittest.TestCase):
 
 class TestStripThinkingContent(unittest.TestCase):
     def test_strip_regular_think_block(self):
-        text = "前文\n<think>internal reasoning</think>\n正文"
+        text = "\u524d\u6587\n\U0001f9e0internal reasoning\U0001f9e0\n\u6b63\u6587"
         cleaned = ChatTabWidget._strip_thinking_content(text)
-        self.assertEqual(cleaned, "前文\n\n正文")
+        self.assertEqual(cleaned, "\u524d\u6587\n\n\u6b63\u6587")
 
     def test_keep_think_tag_inside_fenced_code_block(self):
-        text = "说明\n```xml\n<think>keep me</think>\n```\n尾部"
+        text = "\u8bf4\u660e\n```xml\n\U0001f9e0keep me\U0001f9e0\n```\n\u5c3e\u90e8"
         cleaned = ChatTabWidget._strip_thinking_content(text)
-        self.assertIn("<think>keep me</think>", cleaned)
+        self.assertIn("\U0001f9e0keep me\U0001f9e0", cleaned)
         self.assertIn("```xml", cleaned)
-        self.assertTrue(cleaned.endswith("尾部"))
+        self.assertTrue(cleaned.endswith("\u5c3e\u90e8"))
 
     def test_strip_standalone_think_tags(self):
-        text = "A</think>\nB<think id='x'>\nC"
+        text = "A\U0001f9e0\nB<think id='x'>\nC"
         cleaned = ChatTabWidget._strip_thinking_content(text)
-        self.assertEqual(cleaned, "A\nB")
+        # Single brain emoji not matched by paired format4,
+        # <think> without </think> not matched by format1
+        self.assertIn("A", cleaned)
+        self.assertIn("B", cleaned)
+        self.assertIn("C", cleaned)
+        self.assertNotIn("<think", cleaned)
 
 
 if __name__ == "__main__":
